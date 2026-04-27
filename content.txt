@@ -1,0 +1,420 @@
+Based on my analysis of the codebase, here's a comprehensive overview of your Shopcore e-commerce backend:
+
+---
+
+## **1. Architecture Overview**
+
+This is a **layered, modular architecture** built with Rust and the Axum web framework, following the classic clean architecture pattern:
+
+```
+Handlers (HTTP Layer) → Services (Business Logic) → Repositories (Data Layer) → Database
+```
+
+The architecture enforces clear separation of concerns:
+- **Handlers**: Accept HTTP requests, validate input, call services
+- **Services**: Implement business logic, orchestrate repositories
+- **Repositories**: Handle database operations via SQLx
+- **Models**: Define data structures that map to database rows
+- **DTOs**: Transfer objects for request/response serialization
+
+---
+
+## **2. Core Modules**
+
+| Module | Purpose | Responsibility |
+|--------|---------|-----------------|
+| **app** | Application setup & routing | Server initialization, route definitions, middleware setup |
+| **config** | Configuration management | Load env vars, database setup, CORS, Redis |
+| **handlers** | HTTP request handlers | API endpoints for auth, products, orders, cart, reviews, addresses, users |
+| **services** | Business logic layer | Auth logic, order processing, cart management, email notifications |
+| **repositories** | Database access layer | Query execution, data persistence, user/product/order operations |
+| **models** | Domain models | User, Product, Order, Cart, Review, Address, Category structures |
+| **dtos** | Data transfer objects | Request/response payloads (AuthRequest, ProductDTO, etc.) |
+| **errors** | Error handling | Custom AppError type with HTTP status mapping |
+| **middleware** | Middleware components | JWT authentication, logging, rate limiting |
+| **utils** | Utility functions | JWT token generation/validation, password hashing, pagination |
+| **constants** | App constants | Order statuses, user roles, payment methods, error messages |
+| **types** | Custom types | Enums and type aliases used across the app |
+
+---
+
+## **3. Key Features**
+
+**Authentication & Authorization:**
+- User registration/login with JWT tokens
+- Password hashing with bcrypt
+- Refresh token mechanism (24-hour access, 30-day refresh)
+- Protected routes with auth middleware
+- Role-based access (Admin/Customer)
+- Password reset via email
+- Forgot password flow
+
+**Product Management:**
+- Product catalog with categories and nested category trees
+- Product variants and images
+- Stock management
+- Product search and filtering
+- Featured products display
+- Price comparison tracking
+- Admin endpoints for product CRUD
+
+**Shopping Cart:**
+- Add/remove items from cart
+- Update quantities
+- Clear cart functionality
+- Session-based (stored in database)
+
+**Orders & Checkout:**
+- Complete checkout flow
+- Order tracking and status management
+- Order history retrieval
+- Multiple order items per order
+- Payment method tracking
+- Shipping/billing address support
+
+**Reviews & Ratings:**
+- Product reviews with star ratings
+- Review helpfulness voting
+- Verified purchase badges
+- Review moderation
+
+**User Management:**
+- User profiles with address book
+- Multiple shipping/billing addresses
+- Profile updates
+
+**Additional Features:**
+- Rate limiting middleware
+- Comprehensive logging with tracing
+- Request ID tracking
+- CORS configuration
+- Database migrations with triggers
+- Payment integration (Stripe configuration visible)
+- Email notifications via SMTP
+
+---
+
+## **4. Technology Stack**
+
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| **Web Framework** | Axum | 0.8.8 |
+| **Runtime** | Tokio | 1.x (full features) |
+| **Database** | PostgreSQL 12+ | via SQLx 0.8.6 |
+| **HTTP Client** | Reqwest | 0.13.2 |
+| **Authentication** | jsonwebtoken | 10.3.0 |
+| **Password Hashing** | bcrypt | 0.19 |
+| **Serialization** | Serde | 1.x |
+| **Validation** | validator | 0.20 |
+| **Logging** | Tracing + Tracing-subscriber | 0.1/0.3 |
+| **Email** | Lettre (SMTP) | 0.11 |
+| **UUID Generation** | uuid | 1.x (v4, serde) |
+| **Decimal Math** | rust_decimal | 1.x |
+| **Rate Limiting** | tower-governor | 0.8.0 |
+| **Compression** | tower-http | 0.6.8 |
+| **TLS** | rustls + ring | 0.23/0.17 |
+| **Environment** | dotenvy | 0.15 |
+
+---
+
+## **5. Database Schema**
+
+**Core Tables:**
+- **users** — User accounts with roles (customer/admin), authentication, profile info
+- **categories** — Hierarchical product categories with parent_id support
+- **products** — Product catalog with pricing, stock, images
+- **product_images** — Multiple images per product with ordering
+- **product_variants** — Product variants with different SKUs and prices
+- **reviews** — Product reviews with ratings, verified purchase tracking
+- **review_replies** — Responses to reviews
+- **review_helpfulness** — Track helpful/unhelpful votes on reviews
+- **cart** — User shopping carts
+- **cart_items** — Individual items in carts with product snapshots
+- **orders** — Customer orders with status tracking
+- **order_items** — Line items in orders
+- **addresses** — User addresses (shipping/billing)
+- **coupons** — Discount codes
+- **payment_transactions** — Payment history and status
+- **password_resets** — Password reset tokens
+
+**Key Features:**
+- UUID primary keys
+- Automatic `updated_at` triggers on all tables
+- Foreign key constraints with CASCADE deletes
+- Full-text search indexes via `pg_trgm`
+- JSONB columns for flexible data (product variants)
+- Soft deletes for reviews (deleted_at column)
+- Hierarchical queries for categories (recursive CTE functions)
+
+---
+
+## **6. API Structure**
+
+**Public Routes (No Authentication):**
+```
+GET  /health, /health/ready, /health/live               [Health checks]
+POST /api/auth/register                                   [User signup]
+POST /api/auth/login                                      [User login]
+POST /api/auth/refresh                                    [Refresh JWT token]
+POST /api/auth/forgot-password                            [Password recovery]
+POST /api/auth/reset-password                             [Password reset with token]
+GET  /api/categories                                      [List categories]
+GET  /api/products/featured                               [Featured products]
+GET  /api/products/search                                 [Search products]
+GET  /api/products                                        [List products with pagination]
+GET  /api/products/{id}                                   [Get product details]
+```
+
+**Protected Routes (Require JWT Token):**
+```
+POST /api/auth/logout                                     [User logout]
+POST /api/auth/change-password                            [Change password]
+GET  /api/users/{id}                                      [Get user profile]
+PUT  /api/users/{id}                                      [Update user profile]
+GET  /api/cart                                            [Get user's cart]
+POST /api/cart                                            [Add item to cart]
+DELETE /api/cart/clear                                    [Clear cart]
+PUT  /api/cart/items/{item_id}                            [Update cart item quantity]
+DELETE /api/cart/items/{item_id}                          [Remove cart item]
+POST /api/orders                                          [Checkout/Create order]
+GET  /api/orders                                          [Get user's orders]
+GET  /api/orders/{order_id}                               [Get order details]
+GET  /api/addresses                                       [List user addresses]
+POST /api/addresses                                       [Create address]
+PUT  /api/addresses/{address_id}                          [Update address]
+DELETE /api/addresses/{address_id}                        [Delete address]
+```
+
+**Admin Routes (Protected + Role Check):**
+```
+PUT  /api/admin/orders/{order_id}/status                  [Update order status]
+POST /api/admin/products                                  [Create product]
+PUT  /api/admin/products/{id}                             [Update product]
+DELETE /api/admin/products/{id}                           [Delete product]
+```
+
+---
+
+## **7. Error Handling**
+
+The [app_error.rs](src/errors/app_error.rs) module implements a custom `AppError` enum that maps to HTTP status codes:
+
+```rust
+pub enum AppError {
+    Database(sqlx::Error)           → 500 Internal Server Error
+    Validation(String)              → 400 Bad Request
+    NotFound(String)                → 404 Not Found
+    Unauthorized(String)            → 401 Unauthorized
+    Forbidden(String)               → 403 Forbidden
+    BadRequest(String)              → 400 Bad Request
+    Conflict(String)                → 409 Conflict
+    InternalServerError             → 500 Internal Server Error
+    EmailError(String)              → 500 Internal Server Error
+}
+```
+
+**Features:**
+- Automatic conversion from `sqlx::Error` and `anyhow::Error`
+- Human-readable error messages returned to clients
+- Proper HTTP status code mapping
+- Server-side error logging with tracing
+- Validation error aggregation
+
+---
+
+## **8. Middleware Stack**
+
+1. **Auth Middleware** — Validates JWT tokens, extracts user claims, injects `AuthUser` into request extensions
+2. **TraceLayer** — HTTP request/response tracing via tower-http
+3. **CORS Middleware** — Configured in [cors.rs](src/config/cors.rs)
+4. **Rate Limiting** — Via tower-governor (configurable requests/duration)
+5. **Compression** — Gzip compression on responses
+6. **Request ID Tracking** — Unique ID per request for logging correlation
+
+**Authentication Flow:**
+- Client sends JWT in `Authorization: Bearer <token>` header
+- Middleware extracts and validates token signature
+- Extracts claims (user_id, email, role)
+- Injects `AuthUser` struct into request extensions
+- Handler accesses authenticated user via extractor
+
+---
+
+## **9. Request Data Flow**
+
+**Example: Create Order Flow**
+
+```
+1. Client POST /api/orders with order data + JWT token
+   ↓
+2. Router receives request
+   ↓
+3. Auth Middleware layer
+   - Extract JWT from Authorization header
+   - Verify signature using secret
+   - If valid: inject AuthUser into extensions
+   - If invalid: return 401 Unauthorized
+   ↓
+4. Handler (checkout)
+   - Extract State (AppState with db_pool, config)
+   - Extract AuthUser from extensions
+   - Parse/validate JSON body (OrderRequest)
+   - Call OrderService::create_order()
+   ↓
+5. Service (OrderService)
+   - Validate cart items exist
+   - Check product availability/stock
+   - Calculate totals, tax, shipping
+   - Call OrderRepository methods
+   - Call AddressRepository for shipping/billing
+   ↓
+6. Repository layer
+   - Execute SQL queries via SQLx
+   - Begin transaction
+   - Insert order into orders table
+   - Insert order items into order_items table
+   - Update product stock quantities
+   - Commit transaction
+   ↓
+7. Service returns OrderResponse
+   ↓
+8. Handler converts to JSON response
+   ↓
+9. Response sent back to client with 200/201 status
+```
+
+---
+
+## **10. Dependencies** 
+
+**Web & HTTP:**
+- `axum` — Modern async web framework
+- `tower` — Middleware and service abstractions
+- `tower-http` — Pre-built HTTP middleware (CORS, compression, tracing)
+
+**Database:**
+- `sqlx` — Async SQL driver with compile-time checked queries
+- Configured for PostgreSQL with connection pooling
+
+**Authentication & Security:**
+- `jsonwebtoken` — JWT creation and validation
+- `bcrypt` — Password hashing with configurable cost
+- `rustls` & `ring` — TLS/crypto operations
+
+**Async Runtime:**
+- `tokio` — Async runtime with full feature set
+
+**Serialization:**
+- `serde` & `serde_json` — JSON serialization/deserialization
+
+**Validation:**
+- `validator` — Field-level validation with derive macros
+- `regex` — Pattern matching for validation
+
+**Utilities:**
+- `uuid` — UUID generation (v4) and serialization
+- `chrono` — Date/time handling with timezone support
+- `rust_decimal` — Precise decimal arithmetic (for prices)
+- `strum` — Enum utilities and string conversions
+- `lazy_static` — Lazy static initialization
+- `anyhow` — Error handling and context
+- `thiserror` — Ergonomic error definition
+
+**Email:**
+- `lettre` — Email delivery via SMTP
+- `tera` — Template rendering for emails
+
+**Logging:**
+- `tracing` — Structured logging framework
+- `tracing-subscriber` — Log filtering and output formatting
+- `tracing-appender` — File-based log output
+
+**Environment:**
+- `dotenvy` — Load .env files
+
+**Rate Limiting:**
+- `tower-governor` — Token bucket rate limiter
+
+---
+
+## **11. Configuration & Environment**
+
+Configuration is centralized in [app_config.rs](src/config/app_config.rs), loaded from environment variables:
+
+**Required Variables:**
+```
+DATABASE_URL              PostgreSQL connection string
+STRIPE_SECRET_KEY        Stripe payment API key
+STRIPE_WEBHOOK_SECRET    Stripe webhook signing key
+SMTP_USERNAME            SMTP server username
+SMTP_PASSWORD            SMTP server password
+JWT_SECRET               Secret for signing JWT tokens
+```
+
+**Optional Variables:**
+```
+APP_ENV                  (development|production) [default: development]
+APP_PORT                 [default: 3000]
+APP_HOST                 [default: 127.0.0.1]
+JWT_EXPIRATION_HOURS     [default: 24]
+BCRYPT_COST             [default: 12]
+RATE_LIMIT_REQUESTS     [default: 60]
+RATE_LIMIT_DURATION_SECONDS [default: 60]
+DEFAULT_PAGE_SIZE       [default: 20]
+MAX_PAGE_SIZE           [default: 100]
+SMTP_HOST               [default: smtp.gmail.com]
+REDIS_URL               [default: redis://localhost:6379]
+```
+
+---
+
+## **12. Database Migrations**
+
+Migrations are SQL files in the [migrations/](migrations/) folder, run automatically on startup:
+
+- **001_schema.sql** — Core tables (users, products, categories, orders, etc.)
+- **002_triggers_and_functions.sql** — Auto-updated timestamps, slug generation, category trees, product indexing
+- **003_indexes.sql** — Performance indexes on frequently queried columns
+- **004_seed_data.sql** — Sample data for development
+- **005_create_password_resets.sql** — Password reset token management
+
+Key database features:
+- Automatic `updated_at` timestamp triggers
+- Hierarchical category queries via recursive CTEs
+- Full-text search indexes
+- Foreign key constraints
+- JSONB columns for flexible attributes
+
+---
+
+## **13. Running the Application**
+
+**Build:**
+```bash
+cargo build --release
+```
+
+**Run:**
+```bash
+cargo run
+# Or via makefile: make run
+```
+
+**Development:**
+```bash
+# Initialize database
+./scripts/init_db.sh
+
+# Run migrations
+./scripts/migrate.sh
+
+# Seed with sample data
+./scripts/seed_db.sh
+
+# Run in Docker
+docker-compose up
+```
+
+---
+
+This is a **production-ready, well-architected** e-commerce backend with strong separation of concerns, comprehensive error handling, security best practices (JWT auth, password hashing, CORS), and database optimization through migrations and indexes.

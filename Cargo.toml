@@ -1,0 +1,87 @@
+[package]
+name = "shopcore-backend"
+version = "0.1.0"
+edition = "2021"
+authors = ["Neonthedev"]
+description = "E-commerce backend API built with Axum"
+license = "MIT"
+repository = "https://github.com/neontoshi/shopcore-backend"
+
+[lib]
+name = "shopcore_backend"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pkg"
+path = "src/main.rs"
+
+[dependencies]
+
+# ── Web framework ──────────────────────────────────────────────────────────────
+axum = "0.8.8"
+tower = "0.5.3"
+tower-http = { version = "0.6.8", features = ["cors", "trace", "compression-full"] }
+tower_governor = "0.8.0"
+
+# ── Async runtime ──────────────────────────────────────────────────────────────
+tokio = { version = "1", features = ["full"] }
+
+# ── Database ───────────────────────────────────────────────────────────────────
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "chrono", "rust_decimal", "uuid"] }
+
+# ── TLS / Crypto ───────────────────────────────────────────────────────────────
+rustls = { version = "0.23", features = ["ring"], default-features = false }
+ring = "0.17"
+jsonwebtoken = { version = "10.3.0", default-features = false, features = ["use_pem", "rust_crypto"] }
+# ── Serialization ──────────────────────────────────────────────────────────────
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ── Validation ─────────────────────────────────────────────────────────────────
+validator = { version = "0.20", features = ["derive"] }
+regex = "1"
+
+# ── Error handling ─────────────────────────────────────────────────────────────
+anyhow = "1"
+thiserror = "2.0.18"
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# ── Date / Time ────────────────────────────────────────────────────────────────
+chrono = { version = "0.4", features = ["serde"] }
+
+# ── UUID ───────────────────────────────────────────────────────────────────────
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# ── Numeric ────────────────────────────────────────────────────────────────────
+rust_decimal = { version = "1", features = ["db-postgres", "maths"] }
+
+# ── Enum utilities ─────────────────────────────────────────────────────────────
+strum = { version = "0.28.0", features = ["derive"] }
+strum_macros = "0.28.0"
+lazy_static = "1.5.0"
+
+# ── Password hashing ───────────────────────────────────────────────────────────
+bcrypt = "0.19"
+
+# ── Email ──────────────────────────────────────────────────────────────────────
+tera = "1.19"
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "tokio1", "tokio1-rustls-tls"] }
+# ── HTTP client ────────────────────────────────────────────────────────────────
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
+# ── Environment ────────────────────────────────────────────────────────────────
+dotenvy = "0.15"
+
+[dev-dependencies]
+
+# ── Testing ────────────────────────────────────────────────────────────────────
+tokio-test = "0.4"
+serial_test = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

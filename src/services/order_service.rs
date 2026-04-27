@@ -1,0 +1,245 @@
+// use crate::models::{Order, OrderWithItems, Address};
+use crate::repositories::{CartRepository, OrderRepository, AddressRepository, ProductRepository};
+use crate::dtos::{CheckoutResponse, OrderResponse, OrderItemResponse};
+use crate::errors::AppError;
+use sqlx::PgPool;
+use uuid::Uuid;
+use rust_decimal::Decimal;
+
+pub struct OrderService;
+
+impl OrderService {
+    const TAX_RATE: Decimal = Decimal::from_parts(10, 0, 0, false, 2);
+    const SHIPPING_COST: Decimal = Decimal::from_parts(500, 0, 0, false, 2);
+
+    pub async fn checkout(
+        pool: &PgPool,
+        user_id: &Uuid,
+        shipping_address_id: Uuid,
+        billing_address_id: Uuid,
+        payment_method: &str,
+        notes: Option<String>,
+    ) -> Result<CheckoutResponse, AppError> {
+        let cart = CartRepository::find_or_create_cart(pool, user_id).await?;
+        let cart_items = CartRepository::get_cart_with_items(pool, &cart.id).await?;
+
+        if cart_items.is_empty() {
+            return Err(AppError::bad_request("Cannot checkout with empty cart"));
+        }
+
+        let shipping_addr = AddressRepository::find_by_id(pool, &shipping_address_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Shipping address"))?;
+
+        if shipping_addr.user_id != *user_id {
+            return Err(AppError::forbidden("Address does not belong to user"));
+        }
+
+        let billing_addr = AddressRepository::find_by_id(pool, &billing_address_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Billing address"))?;
+
+        if billing_addr.user_id != *user_id {
+            return Err(AppError::forbidden("Address does not belong to user"));
+        }
+
+        let subtotal = cart_items.iter()
+            .fold(Decimal::ZERO, |acc, item| acc + item.total.unwrap_or(Decimal::ZERO));
+
+        let tax = subtotal * Self::TAX_RATE / Decimal::new(100, 0);
+        let total = subtotal + tax + Self::SHIPPING_COST;
+
+        // ✅ SINGLE TRANSACTION
+        let mut tx = pool.begin().await?;
+
+        // ✅ Validate stock inside transaction
+        for item in &cart_items {
+            let product = ProductRepository::find_by_id(&mut *tx, &item.product_id)
+                .await?
+                .ok_or_else(|| AppError::not_found(&format!("Product {}", item.name)))?;
+
+            if product.stock_quantity < item.quantity {
+                return Err(AppError::bad_request(&format!(
+                    "Insufficient stock for product: {}. Available: {}",
+                    product.name, product.stock_quantity
+                )));
+            }
+        }
+
+        let order_number = Self::generate_order_number();
+
+        let order = OrderRepository::create_order(
+            &mut *tx,
+            user_id,
+            &order_number,
+            subtotal,
+            tax,
+            Self::SHIPPING_COST,
+            total,
+            shipping_address_id,
+            billing_address_id,
+            payment_method,
+            notes,
+        ).await?;
+
+        let mut order_items = Vec::new();
+
+        for item in &cart_items {
+            let product = ProductRepository::find_by_id(&mut *tx, &item.product_id)
+                .await?
+                .unwrap();
+
+            order_items.push((
+                item.product_id,
+                item.quantity,
+                item.price,
+                product.name.clone(),
+                product.sku,
+            ));
+
+            ProductRepository::update_stock(
+                &mut *tx,
+                &item.product_id,
+                -item.quantity,
+            ).await?;
+        }
+
+        OrderRepository::add_order_items(&mut *tx, &order.id, order_items).await?;
+        CartRepository::clear_cart(&mut *tx, &cart.id).await?;
+
+        tx.commit().await?;
+
+        Ok(CheckoutResponse {
+            order_id: order.id,
+            order_number: order.order_number,
+            total: total.to_string(),
+            payment_url: None,
+        })
+    }
+
+    pub async fn update_payment_status(
+        pool: &PgPool,
+        order_id: &Uuid,
+        status: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            UPDATE orders
+            SET payment_status = $1,
+                updated_at = NOW()
+            WHERE id = $2
+            "#,
+            status,
+            order_id
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_order(
+        pool: &PgPool,
+        user_id: &Uuid,
+        order_id: &Uuid,
+        is_admin: bool,
+    ) -> Result<OrderResponse, AppError> {
+        let order = OrderRepository::find_by_id(pool, order_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Order"))?;
+
+        if !is_admin && order.user_id != *user_id {
+            return Err(AppError::forbidden("Access denied"));
+        }
+
+        let items = OrderRepository::get_order_items(pool, order_id).await?;
+
+        Ok(OrderResponse {
+            id: order.id,
+            order_number: order.order_number,
+            status: order.status,
+            subtotal: order.subtotal.to_string(),
+            tax: order.tax.to_string(),
+            shipping_cost: order.shipping_cost.to_string(),
+            total: order.total.to_string(),
+            payment_method: order.payment_method,
+            payment_status: order.payment_status,
+            created_at: order.created_at,
+            items: items.into_iter().map(|item| OrderItemResponse {
+                product_id: item.product_id,
+                product_name: item.product_name,
+                quantity: item.quantity,
+                price: item.price.to_string(),
+                total: item.total.to_string(),
+            }).collect(),
+        })
+    }
+
+    pub async fn get_user_orders(
+        pool: &PgPool,
+        user_id: &Uuid,
+        page: usize,
+        page_size: usize,
+    ) -> Result<(Vec<OrderResponse>, i64), AppError> {
+        let offset = (page - 1) * page_size;
+        let orders = OrderRepository::get_orders_by_user(
+            pool,
+            user_id,
+            page_size as i64,
+            offset as i64,
+        ).await?;
+
+        let total = OrderRepository::count_user_orders(pool, user_id).await?;
+
+        let mut responses = Vec::new();
+        for order in orders {
+            let items = OrderRepository::get_order_items(pool, &order.id).await?;
+            responses.push(OrderResponse {
+                id: order.id,
+                order_number: order.order_number,
+                status: order.status,
+                subtotal: order.subtotal.to_string(),
+                tax: order.tax.to_string(),
+                shipping_cost: order.shipping_cost.to_string(),
+                total: order.total.to_string(),
+                payment_method: order.payment_method,
+                payment_status: order.payment_status,
+                created_at: order.created_at,
+                items: items.into_iter().map(|item| OrderItemResponse {
+                    product_id: item.product_id,
+                    product_name: item.product_name,
+                    quantity: item.quantity,
+                    price: item.price.to_string(),
+                    total: item.total.to_string(),
+                }).collect(),
+            });
+        }
+
+        Ok((responses, total))
+    }
+
+    pub async fn update_order_status(
+        pool: &PgPool,
+        order_id: &Uuid,
+        status: crate::constants::order_status::OrderStatus,
+    ) -> Result<(), AppError> {
+        let order = OrderRepository::find_by_id(pool, order_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Order"))?;
+
+        if !order.status.can_transition_to(status) {
+            return Err(AppError::bad_request("Invalid status transition"));
+        }
+
+        OrderRepository::update_order_status(pool, order_id, status).await?;
+
+        Ok(())
+    }
+
+    fn generate_order_number() -> String {
+        use chrono::Utc;
+        let timestamp = Utc::now().format("%Y%m%d%H%M%S");
+        let random = &Uuid::new_v4().simple().to_string()[..6].to_uppercase();
+        format!("ORD-{}-{}", timestamp, random)
+    }
+}
