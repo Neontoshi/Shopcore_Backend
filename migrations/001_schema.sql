@@ -246,6 +246,13 @@ CREATE TABLE wishlists (
     UNIQUE(user_id, product_id)
 );
 
+CREATE TABLE password_resets (
+    email TEXT NOT NULL,
+    token TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+
 -- MATERIALIZED VIEW: Product Search
 CREATE MATERIALIZED VIEW product_search_view AS
 SELECT 
