@@ -4,7 +4,7 @@ use anyhow::Result;
 use redis::AsyncCommands;
 
 pub const PRODUCTS_CACHE_KEY: &str = "products:all";
-pub const CACHE_TTL_SECONDS: u64 = 300; // 5 minutes
+pub const CACHE_TTL_SECONDS: u64 = 300;
 
 pub async fn cache_all_products(
     redis_client: &RedisClient,

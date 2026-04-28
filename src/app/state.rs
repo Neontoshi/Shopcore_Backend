@@ -31,7 +31,6 @@ impl AppState {
         let redis_client = RedisClient::new(&config).await?;
         tracing::info!("Redis connected successfully");
         
-        // Cache products on startup
         tracing::info!("Fetching products from database...");
         match ProductRepository::find_all(&db_pool).await {
             Ok(products) => {
