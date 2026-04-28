@@ -4,9 +4,11 @@ pub mod pagination;
 pub mod jwt;
 pub mod password;
 pub mod validators;
+pub mod cache;
 
 pub use logger::init_logger;
 pub use response::*;
 pub use pagination::*;
 pub use jwt::JwtService;
 pub use password::PasswordService;
+pub use cache::*;

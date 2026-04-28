@@ -7,13 +7,12 @@ use std::net::SocketAddr;
 use sqlx::PgPool;
 
 pub async fn start_server(config: AppConfig, db_pool: PgPool) -> anyhow::Result<()> {
-    let state = AppState::new(config.clone(), db_pool)?;
+    let addr: SocketAddr = config.server_address().parse()?;  // Move this before config is moved
+    let state = AppState::new(config, db_pool).await?;
     
     let app = create_router(state)
         .layer(TraceLayer::new_for_http())
         .layer(configure_cors());
-    
-    let addr: SocketAddr = config.server_address().parse()?;
     
     tracing::info!("Server running on http://{}", addr);
     

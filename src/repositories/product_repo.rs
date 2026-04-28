@@ -34,6 +34,23 @@ impl ProductRepository {
         Ok(())
     }
     
+    pub async fn find_all(pool: &PgPool) -> Result<Vec<Product>> {
+        let products = sqlx::query_as!(
+            Product,
+            r#"
+            SELECT id, name, slug, description, price, compare_at_price,
+                   stock_quantity, category_id, sku, is_active, image_url,
+                   created_at, updated_at
+            FROM products
+            ORDER BY created_at DESC
+            "#
+        )
+        .fetch_all(pool)
+        .await?;
+        
+        Ok(products)
+    }
+    
     pub async fn find_by_id<'e, E>(executor: E, id: &Uuid) -> Result<Option<Product>>
     where
         E: Executor<'e, Database = Postgres>,

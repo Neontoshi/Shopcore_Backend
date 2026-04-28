@@ -20,6 +20,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub async fn run() -> anyhow::Result<()> {
     // Load configuration
     let config = AppConfig::from_env().context("Failed to load configuration")?;
+    tracing::info!("Configuration loaded");
 
     // Initialize logging
     init_logging(&config)?;
@@ -30,7 +31,9 @@ pub async fn run() -> anyhow::Result<()> {
     // Run migrations
     run_migrations(&db_pool).await?;
 
-    // Start server
+    tracing::info!("Starting server...");
+    
+    // Start server (Redis is initialized inside AppState)
     start_server(config, db_pool).await?;
 
     Ok(())
@@ -72,7 +75,6 @@ async fn init_database(config: &AppConfig) -> anyhow::Result<sqlx::PgPool> {
         .await
         .context("Failed to connect to database")?;
 
-    // Test the connection
     sqlx::query("SELECT 1")
         .fetch_one(&pool)
         .await
