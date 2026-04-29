@@ -54,7 +54,8 @@ impl OrderService {
 
         // ✅ Validate stock inside transaction
         for item in &cart_items {
-            let product = ProductRepository::find_by_id_tx(&mut *tx, &item.product_id).await?
+            let product = ProductRepository::find_by_id_tx(ProductRepository::find_by_id(&mut *txmut *tx, &item.product_id)
+                .await?
                 .ok_or_else(|| AppError::not_found(&format!("Product {}", item.name)))?;
 
             if product.stock_quantity < item.quantity {
@@ -84,7 +85,8 @@ impl OrderService {
         let mut order_items = Vec::new();
 
         for item in &cart_items {
-            let product = ProductRepository::find_by_id_tx(&mut *tx, &item.product_id).await?
+            let product = ProductRepository::find_by_id_tx(ProductRepository::find_by_id(&mut *txmut *tx, &item.product_id)
+                .await?
                 .unwrap();
 
             order_items.push((

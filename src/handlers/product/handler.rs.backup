@@ -4,10 +4,7 @@ use axum::{
 };
 use uuid::Uuid;
 use crate::app::state::AppState;
-use crate::dtos::{
-    CreateProductRequest, UpdateProductRequest, ProductFilter, 
-    ProductResponse, ApiResponse, PaginatedResponse
-};
+use crate::dtos::{CreateProductRequest, UpdateProductRequest, ProductFilter, ProductResponse};
 use crate::services::ProductService;
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
@@ -17,7 +14,7 @@ pub async fn create_product(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<CreateProductRequest>,
-) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
+) -> Result<Json<ProductResponse>, AppError> {
     if auth_user.role != "admin" {
         return Err(AppError::forbidden("Admin access required"));
     }
@@ -25,18 +22,15 @@ pub async fn create_product(
         return Err(AppError::validation(errors.to_string()));
     }
     let product = ProductService::create_product(state.get_db_pool(), req).await?;
-    Ok(Json(ApiResponse::success(product)))
+    Ok(Json(product))
 }
 
 pub async fn get_product(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
-    match ProductService::get_product(state.get_db_pool(), &id).await {
-        Ok(product) => Ok(Json(ApiResponse::success(product))),
-        Err(AppError::NotFound(_)) => Ok(Json(ApiResponse::error("Product not found"))),
-        Err(e) => Err(e),
-    }
+) -> Result<Json<ProductResponse>, AppError> {
+    let product = ProductService::get_product(state.get_db_pool(), &id).await?;
+    Ok(Json(product))
 }
 
 pub async fn update_product(
@@ -44,35 +38,32 @@ pub async fn update_product(
     Extension(auth_user): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateProductRequest>,
-) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
+) -> Result<Json<ProductResponse>, AppError> {
     if auth_user.role != "admin" {
         return Err(AppError::forbidden("Admin access required"));
     }
     let product = ProductService::update_product(state.get_db_pool(), &id, req).await?;
-    Ok(Json(ApiResponse::success(product)))
+    Ok(Json(product))
 }
 
 pub async fn delete_product(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<()>>, AppError> {
+) -> Result<Json<crate::utils::MessageResponse>, AppError> {
     if auth_user.role != "admin" {
         return Err(AppError::forbidden("Admin access required"));
     }
     ProductService::delete_product(state.get_db_pool(), &id).await?;
-    Ok(Json(ApiResponse::success(())))
+    Ok(Json(crate::utils::MessageResponse::new("Product deleted successfully")))
 }
 
 pub async fn list_products(
     State(state): State<AppState>,
     Query(params): Query<ProductFilter>,
-) -> Result<Json<PaginatedResponse<ProductResponse>>, AppError> {
-    let page = params.page.unwrap_or(1);
-    let page_size = params.page_size.unwrap_or(20);
-    let limit = page_size as i64;
-    let offset = (page - 1) as i64 * limit;
-    
+) -> Result<Json<Vec<ProductResponse>>, AppError> {
+    let limit = params.page_size.unwrap_or(20) as i64;
+    let offset = params.page.unwrap_or(1) as i64 * limit - limit;
     let products = crate::repositories::ProductRepository::search(
         state.get_db_pool(),
         params.query.as_deref(),
@@ -82,36 +73,22 @@ pub async fn list_products(
         params.is_active,
         limit,
         offset,
-    ).await.map_err(|_| AppError::internal_server_error())?;
-    
-    let total = crate::repositories::ProductRepository::count_search(
-        state.get_db_pool(),
-        params.query.as_deref(),
-        params.category_id,
-        params.min_price,
-        params.max_price,
-        params.is_active,
-    ).await.map_err(|_| AppError::internal_server_error())?;
-    
-    let product_responses: Vec<ProductResponse> = products.into_iter().map(|p| p.into()).collect();
-    
-    Ok(Json(PaginatedResponse::new(product_responses, total).with_pagination(page as i64, page_size as i64)))
+    ).await?;
+    Ok(Json(products.into_iter().map(|p| p.into()).collect()))
 }
 
 pub async fn list_categories(
     State(state): State<AppState>,
-) -> Result<Json<ApiResponse<Vec<crate::dtos::CategoryResponse>>>, AppError> {
+) -> Result<Json<Vec<crate::dtos::CategoryResponse>>, AppError> {
     let categories = crate::repositories::CategoryRepository::find_all_active(state.get_db_pool())
         .await
         .map_err(|_| AppError::internal_server_error())?;
-    Ok(Json(ApiResponse::success(
-        categories.into_iter().map(|c| c.into()).collect()
-    )))
+    Ok(Json(categories.into_iter().map(|c| c.into()).collect()))
 }
 
 pub async fn get_featured_products(
     State(state): State<AppState>,
-) -> Result<Json<ApiResponse<Vec<ProductResponse>>>, AppError> {
+) -> Result<Json<Vec<ProductResponse>>, AppError> {
     let products = crate::repositories::ProductRepository::search(
         state.get_db_pool(),
         None,
@@ -124,15 +101,13 @@ pub async fn get_featured_products(
     )
     .await
     .map_err(|_| AppError::internal_server_error())?;
-    Ok(Json(ApiResponse::success(
-        products.into_iter().map(|p| p.into()).collect()
-    )))
+    Ok(Json(products.into_iter().map(|p| p.into()).collect()))
 }
 
 pub async fn search_products(
     State(state): State<AppState>,
     Query(params): Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<ApiResponse<Vec<ProductResponse>>>, AppError> {
+) -> Result<Json<Vec<ProductResponse>>, AppError> {
     let query = params.get("q").map(|s| s.as_str());
     let products = crate::repositories::ProductRepository::search(
         state.get_db_pool(),
@@ -146,7 +121,5 @@ pub async fn search_products(
     )
     .await
     .map_err(|_| AppError::internal_server_error())?;
-    Ok(Json(ApiResponse::success(
-        products.into_iter().map(|p| p.into()).collect()
-    )))
+    Ok(Json(products.into_iter().map(|p| p.into()).collect()))
 }

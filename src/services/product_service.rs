@@ -1,10 +1,11 @@
 use crate::models::Product;
 use crate::repositories::ProductRepository;
-use crate::dtos::{CreateProductRequest, UpdateProductRequest, ProductResponse};
+use crate::dtos::{CreateProductRequest, UpdateProductRequest, ProductResponse, CategoryInfo};
 use crate::errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 use chrono::Utc;
+use rust_decimal::Decimal;
 
 pub struct ProductService;
 
@@ -32,6 +33,8 @@ impl ProductService {
             sku: req.sku,
             is_active: true,
             image_url: req.image_url,
+            average_rating: Decimal::ZERO,
+            total_reviews: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -46,7 +49,37 @@ impl ProductService {
             .await?
             .ok_or_else(|| AppError::not_found("Product"))?;
         
-        Ok(product.into())
+        // Fetch category info if category_id exists
+        let category = if let Some(cat_id) = product.category_id {
+            crate::repositories::CategoryRepository::find_by_id(pool, &cat_id)
+                .await?
+                .map(|c| CategoryInfo {
+                    id: c.id,
+                    name: c.name,
+                    slug: c.slug,
+                })
+        } else {
+            None
+        };
+        
+        Ok(ProductResponse {
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            description: product.description,
+            price: product.price,
+            compare_at_price: product.compare_at_price,
+            stock_quantity: product.stock_quantity,
+            category_id: product.category_id,
+            sku: product.sku,
+            is_active: product.is_active,
+            image_url: product.image_url,
+            average_rating: Some(product.average_rating),
+            total_reviews: Some(product.total_reviews),
+            created_at: product.created_at,
+            updated_at: product.updated_at,
+            category,
+        })
     }
     
     pub async fn get_product_by_slug(pool: &PgPool, slug: &str) -> Result<ProductResponse, AppError> {
@@ -115,7 +148,7 @@ impl ProductService {
     }
 }
 
-// Implement conversion from Product to ProductResponse
+// Update the From<Product> implementation
 impl From<Product> for ProductResponse {
     fn from(product: Product) -> Self {
         ProductResponse {
@@ -130,8 +163,11 @@ impl From<Product> for ProductResponse {
             sku: product.sku,
             is_active: product.is_active,
             image_url: product.image_url,
+            average_rating: Some(product.average_rating),
+            total_reviews: Some(product.total_reviews),
             created_at: product.created_at,
             updated_at: product.updated_at,
+            category: None,
         }
     }
 }

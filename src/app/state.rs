@@ -34,6 +34,7 @@ impl AppState {
         tracing::info!("Fetching products from database...");
         match ProductRepository::find_all(&db_pool).await {
             Ok(products) => {
+            let products: Vec<crate::models::Product> = products;
                 tracing::info!("Found {} products in database", products.len());
                 if !products.is_empty() {
                     tracing::info!("Caching products in Redis...");

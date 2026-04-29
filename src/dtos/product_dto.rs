@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError};
 use rust_decimal::Decimal;
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 fn validate_price(price: &Decimal) -> Result<(), ValidationError> {
     if *price < Decimal::ZERO || *price > Decimal::from(999999) {
@@ -53,8 +54,18 @@ pub struct ProductResponse {
     pub sku: Option<String>,
     pub is_active: bool,
     pub image_url: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub average_rating: Option<Decimal>,
+    pub total_reviews: Option<i32>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub category: Option<CategoryInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CategoryInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub slug: String,
 }
 
 #[derive(Debug, Deserialize)]

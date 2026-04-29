@@ -18,6 +18,8 @@ pub struct Product {
     pub sku: Option<String>,
     pub is_active: bool,
     pub image_url: Option<String>,
+    pub average_rating: Decimal,
+    pub total_reviews: i32,  // Changed from i64 to i32 to match DB
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

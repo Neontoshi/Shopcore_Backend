@@ -64,4 +64,5 @@ init:
 	make docker-up
 	sleep 5
 	make migrate-up
+	make run
 	@echo "Setup complete!"
