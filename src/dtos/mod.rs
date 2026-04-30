@@ -15,3 +15,4 @@ pub use checkout_dto::{CheckoutRequest, CheckoutResponse};
 pub use order_dto::{OrderResponse, OrderItemResponse, UpdateOrderStatusRequest};
 pub use address_dto::*;
 pub use api_response::*;
+pub mod vendor_dto;

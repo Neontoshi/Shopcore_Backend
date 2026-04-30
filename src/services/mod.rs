@@ -13,3 +13,4 @@ pub use order_service::OrderService;
 pub use address_service::AddressService;
 pub use email_service::EmailService;
 pub use user_service::UserService;
+pub mod vendor_service;

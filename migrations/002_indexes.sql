@@ -142,3 +142,14 @@ ANALYZE orders;
 ANALYZE order_items;
 ANALYZE payment_transactions;
 ANALYZE wishlists;
+-- Vendor indexes
+CREATE INDEX IF NOT EXISTS idx_vendor_profiles_user_id ON vendor_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_profiles_is_approved ON vendor_profiles(is_approved);
+CREATE INDEX IF NOT EXISTS idx_vendor_applications_user_id ON vendor_applications(user_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_applications_status ON vendor_applications(status);
+CREATE INDEX IF NOT EXISTS idx_vendor_applications_status_created ON vendor_applications(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_vendor_applications_reviewed ON vendor_applications(reviewed_by);
+CREATE INDEX IF NOT EXISTS idx_products_vendor_id ON products(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_orders_vendor_id ON vendor_orders(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_orders_order_id ON vendor_orders(order_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_orders_status ON vendor_orders(status);

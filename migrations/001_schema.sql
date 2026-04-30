@@ -654,3 +654,51 @@ CREATE TRIGGER trigger_create_user_cart
     AFTER INSERT ON users
     FOR EACH ROW
     EXECUTE FUNCTION create_user_cart();
+    
+-- VENDOR PROFILES (for approved vendors)
+CREATE TABLE IF NOT EXISTS vendor_profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    store_name VARCHAR(255) NOT NULL,
+    store_description TEXT,
+    business_address TEXT NOT NULL,
+    tax_id VARCHAR(100),
+    bank_details TEXT,
+    store_logo_url TEXT,
+    phone_number VARCHAR(50),
+    is_approved BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id)
+);
+
+-- VENDOR APPLICATIONS (for users applying to become vendors)
+CREATE TABLE IF NOT EXISTS vendor_applications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    store_name VARCHAR(255) NOT NULL,
+    store_description TEXT,
+    business_address TEXT NOT NULL,
+    tax_id VARCHAR(100),
+    phone_number VARCHAR(50) NOT NULL,
+    bank_details TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    admin_notes TEXT,
+    reviewed_by UUID REFERENCES users(id),
+    reviewed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- VENDOR PRODUCTS (associate products with vendors)
+ALTER TABLE products ADD COLUMN vendor_id UUID REFERENCES users(id);
+
+-- VENDOR ORDERS (for vendor order management)
+CREATE TABLE IF NOT EXISTS vendor_orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    vendor_id UUID NOT NULL REFERENCES users(id),
+    order_id UUID NOT NULL REFERENCES orders(id),
+    total DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

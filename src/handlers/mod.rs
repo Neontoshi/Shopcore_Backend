@@ -5,4 +5,6 @@ pub mod cart;
 pub mod order;
 pub mod address;
 pub mod user;
+pub mod admin;
 
+pub mod vendor;

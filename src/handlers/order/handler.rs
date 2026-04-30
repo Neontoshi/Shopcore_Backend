@@ -74,3 +74,39 @@ pub async fn update_order_status(
 
     Ok(Json(crate::utils::MessageResponse::new("Order status updated successfully")))
 }
+pub async fn cancel_order(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Path(order_id): Path<Uuid>,
+) -> Result<Json<crate::utils::MessageResponse>, AppError> {
+    // Check if order belongs to user or user is admin
+    let order = sqlx::query!(
+        r#"
+        SELECT user_id, status FROM orders WHERE id = $1
+        "#,
+        order_id
+    )
+    .fetch_optional(state.get_db_pool())
+    .await?
+    .ok_or_else(|| AppError::not_found("Order"))?;
+
+    if order.user_id != auth_user.user_id && auth_user.role != "admin" {
+        return Err(AppError::forbidden("You don't have permission to cancel this order"));
+    }
+
+    if order.status != "pending" {
+        return Err(AppError::bad_request("Only pending orders can be cancelled"));
+    }
+
+    sqlx::query!(
+        r#"
+        UPDATE orders SET status = 'cancelled', updated_at = NOW()
+        WHERE id = $1
+        "#,
+        order_id
+    )
+    .execute(state.get_db_pool())
+    .await?;
+
+    Ok(Json(crate::utils::MessageResponse::new("Order cancelled successfully")))
+}

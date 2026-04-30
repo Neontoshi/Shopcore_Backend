@@ -1,5 +1,5 @@
 use axum::{routing::{get, post, put, delete}, Router, middleware};
-use crate::handlers::{health, auth, product, cart, order, address, user};
+use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin};
 use crate::middleware::auth::auth_middleware;
 use super::state::AppState;
 
@@ -14,13 +14,33 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/checkout", post(order::checkout))
         .route("/api/orders", post(order::checkout).get(order::get_my_orders))
         .route("/api/orders/{order_id}", get(order::get_order))
+        .route("/api/orders/{order_id}/cancel", put(order::cancel_order))
         .route("/api/admin/orders/{order_id}/status", put(order::update_order_status))
         .route("/api/addresses", get(address::get_addresses).post(address::create_address))
-        .route("/api/addresses/{address_id}", put(address::update_address).delete(address::delete_address));
+        .route("/api/addresses/{address_id}", put(address::update_address).delete(address::delete_address))
+        // Vendor routes
+        .route("/api/admin/stats", get(admin::admin_dashboard))
+        .route("/api/admin/vendor/applications", get(admin::get_vendor_applications))
+        .route("/api/admin/vendor/applications/{application_id}", put(admin::review_vendor_application))
+        .route("/api/admin/users", get(admin::get_all_users))
+        .route("/api/admin/users/{user_id}/status", put(admin::update_user_status))
+        .route("/api/admin/products", get(admin::get_all_products_admin))
+        .route("/api/admin/orders", get(admin::get_all_orders_admin))
+        .route("/api/vendor/products", get(vendor::get_my_products).post(vendor::create_product))
+        .route("/api/vendor/products/{product_id}", put(vendor::update_product).delete(vendor::delete_product))
+        .route("/api/vendor/apply", post(vendor::apply_for_vendor))
+        .route("/api/vendor/application", get(vendor::get_my_application))
+        .route("/api/vendor/profile", get(vendor::get_my_vendor_profile))
+        .route("/api/vendor/stats", get(vendor::get_vendor_stats))
+        .route("/api/vendor/orders", get(vendor::get_vendor_orders))
+        .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status));
 
     let admin_routes = Router::new()
         .route("/api/admin/products", post(product::create_product))
-        .route("/api/admin/products/{id}", put(product::update_product).delete(product::delete_product));
+        .route("/api/admin/products/{id}", put(product::update_product).delete(product::delete_product))
+        // Admin vendor management routes
+        .route("/api/admin/vendor/applications", get(vendor::get_pending_applications))
+        .route("/api/admin/vendor/applications/{application_id}", put(vendor::review_application));
 
     Router::new()
         .route("/health", get(health::health_check))

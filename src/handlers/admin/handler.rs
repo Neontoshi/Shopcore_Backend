@@ -271,3 +271,209 @@ pub async fn manage_users(
     
     Ok(Json(responses))
 }
+// Admin: Get all vendor applications
+pub async fn get_vendor_applications(
+    State(state): State<AppState>,
+    request: Request,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    require_admin(&request).await?;
+    
+    let apps = sqlx::query!(
+        r#"
+        SELECT 
+            va.id, va.user_id, va.store_name, va.store_description,
+            va.business_address, va.tax_id, va.phone_number, va.bank_details,
+            va.status, va.admin_notes, va.reviewed_by, va.reviewed_at, va.created_at,
+            u.email as user_email
+        FROM vendor_applications va
+        JOIN users u ON va.user_id = u.id
+        ORDER BY va.created_at DESC
+        "#
+    )
+    .fetch_all(state.get_db_pool())
+    .await?;
+
+    let applications = apps.into_iter().map(|app| {
+        serde_json::json!({
+            "id": app.id,
+            "user_id": app.user_id,
+            "user_email": app.user_email,
+            "store_name": app.store_name,
+            "store_description": app.store_description,
+            "business_address": app.business_address,
+            "tax_id": app.tax_id,
+            "phone_number": app.phone_number,
+            "bank_details": app.bank_details,
+            "status": app.status,
+            "admin_notes": app.admin_notes,
+            "reviewed_by": app.reviewed_by,
+            "reviewed_at": app.reviewed_at,
+            "created_at": app.created_at,
+        })
+    }).collect();
+
+    Ok(Json(applications))
+}
+
+// Admin: Review vendor application
+pub async fn review_vendor_application(
+    State(state): State<AppState>,
+    request: Request,
+    axum::extract::Path(application_id): axum::extract::Path<uuid::Uuid>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(&request).await?;
+    
+    let status = req.get("status").and_then(|s| s.as_str()).ok_or_else(|| AppError::bad_request("Status is required"))?;
+    
+    let user_id = get_auth_user(&request)?.user_id;
+    
+    sqlx::query!(
+        r#"
+        UPDATE vendor_applications
+        SET status = $1, reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
+        WHERE id = $3
+        "#,
+        status,
+        user_id,
+        application_id
+    )
+    .execute(state.get_db_pool())
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "message": format!("Application {} successfully", status)
+    })))
+}
+
+// Admin: Get all users
+pub async fn get_all_users(
+    State(state): State<AppState>,
+    request: Request,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    require_admin(&request).await?;
+    
+    let users = sqlx::query!(
+        r#"
+        SELECT id, email, first_name, last_name, role, is_active, created_at
+        FROM users
+        ORDER BY created_at DESC
+        "#
+    )
+    .fetch_all(state.get_db_pool())
+    .await?;
+
+    let user_list = users.into_iter().map(|u| {
+        serde_json::json!({
+            "id": u.id,
+            "email": u.email,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "role": u.role,
+            "is_active": u.is_active,
+            "created_at": u.created_at,
+        })
+    }).collect();
+
+    Ok(Json(user_list))
+}
+
+// Admin: Update user status
+pub async fn update_user_status(
+    State(state): State<AppState>,
+    request: Request,
+    axum::extract::Path(user_id): axum::extract::Path<uuid::Uuid>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_admin(&request).await?;
+    
+    let is_active = req.get("is_active").and_then(|v| v.as_bool()).ok_or_else(|| AppError::bad_request("is_active is required"))?;
+    
+    sqlx::query!(
+        r#"
+        UPDATE users SET is_active = $1, updated_at = NOW()
+        WHERE id = $2
+        "#,
+        is_active,
+        user_id
+    )
+    .execute(state.get_db_pool())
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "message": format!("User {} successfully", if is_active { "activated" } else { "suspended" })
+    })))
+}
+
+// Admin: Get all products
+pub async fn get_all_products_admin(
+    State(state): State<AppState>,
+    request: Request,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    require_admin(&request).await?;
+    
+    let products = sqlx::query!(
+        r#"
+        SELECT 
+            p.id, p.name, p.price, p.stock_quantity, p.is_active, p.vendor_id,
+            p.created_at,
+            CONCAT(u.first_name, ' ', u.last_name) as vendor_name
+        FROM products p
+        LEFT JOIN users u ON p.vendor_id = u.id
+        ORDER BY p.created_at DESC
+        "#
+    )
+    .fetch_all(state.get_db_pool())
+    .await?;
+
+    let product_list = products.into_iter().map(|p| {
+        serde_json::json!({
+            "id": p.id,
+            "name": p.name,
+            "price": p.price,
+            "stock_quantity": p.stock_quantity,
+            "is_active": p.is_active,
+            "vendor_id": p.vendor_id,
+            "vendor_name": p.vendor_name,
+            "created_at": p.created_at,
+        })
+    }).collect();
+
+    Ok(Json(product_list))
+}
+
+// Admin: Get all orders
+pub async fn get_all_orders_admin(
+    State(state): State<AppState>,
+    request: Request,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    require_admin(&request).await?;
+    
+    let orders = sqlx::query!(
+        r#"
+        SELECT 
+            o.id, o.order_number, o.total, o.status, o.created_at,
+            u.email as customer_email,
+            CONCAT(u.first_name, ' ', u.last_name) as customer_name
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+        ORDER BY o.created_at DESC
+        "#
+    )
+    .fetch_all(state.get_db_pool())
+    .await?;
+
+    let order_list = orders.into_iter().map(|o| {
+        serde_json::json!({
+            "id": o.id,
+            "order_number": o.order_number,
+            "total": o.total,
+            "status": o.status,
+            "created_at": o.created_at,
+            "customer_email": o.customer_email,
+            "customer_name": o.customer_name,
+        })
+    }).collect();
+
+    Ok(Json(order_list))
+}
