@@ -11,6 +11,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/cart", get(cart::get_cart).post(cart::add_to_cart))
         .route("/api/cart/clear", delete(cart::clear_cart))
         .route("/api/cart/items/{item_id}", put(cart::update_cart_item).delete(cart::remove_from_cart))
+        .route("/api/checkout", post(order::checkout))
         .route("/api/orders", post(order::checkout).get(order::get_my_orders))
         .route("/api/orders/{order_id}", get(order::get_order))
         .route("/api/admin/orders/{order_id}/status", put(order::update_order_status))

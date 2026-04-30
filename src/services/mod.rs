@@ -8,7 +8,7 @@ pub mod user_service;
 
 pub use auth_service::AuthService;
 pub use product_service::ProductService;
-pub use cart_service::CartService;
+pub use cart_service::*;
 pub use order_service::OrderService;
 pub use address_service::AddressService;
 pub use email_service::EmailService;

@@ -32,7 +32,7 @@ pub struct CartWithItems {
     pub subtotal: Decimal,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, FromRow)]
 pub struct CartItemWithProduct {
     pub id: Uuid,
     pub product_id: Uuid,

@@ -112,6 +112,7 @@ impl OrderService {
             order_number: order.order_number,
             total: total.to_string(),
             payment_url: None,
+            message: "Order placed successfully".into(),
         })
     }
 

@@ -1,6 +1,6 @@
-use crate::models::{CartWithItems, CartItemWithProduct};
-use crate::repositories::{CartRepository, ProductRepository};
-use crate::dtos::{AddToCartRequest, UpdateCartRequest, CartResponse, CartItemResponse};
+use crate::repositories::CartRepository;
+use crate::models::CartWithItems;
+use crate::dtos::{AddToCartRequest, UpdateCartRequest};
 use crate::errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -18,6 +18,7 @@ impl CartService {
         let total_items: i32 = items.iter().map(|i| i.quantity).sum();
         let subtotal = items.iter()
             .fold(Decimal::new(0, 0), |acc, item| acc + item.total.unwrap_or_default());
+        
         Ok(CartWithItems {
             cart,
             items,
@@ -31,12 +32,26 @@ impl CartService {
         user_id: &Uuid,
         req: AddToCartRequest,
     ) -> Result<CartWithItems, AppError> {
-        let product = ProductRepository::find_by_id(pool, &req.product_id)
-            .await?
-            .ok_or_else(|| AppError::not_found("Product"))?;
+        let product_id = req.product_id.ok_or_else(|| AppError::bad_request("Product ID is required"))?;
+        
+        // Get product to check stock and price
+        let product = sqlx::query!(
+            r#"
+            SELECT price, stock_quantity, name
+            FROM products
+            WHERE id = $1 AND is_active = true
+            "#,
+            product_id
+        )
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Product"))?;
 
         if product.stock_quantity < req.quantity {
-            return Err(AppError::bad_request("Insufficient stock"));
+            return Err(AppError::bad_request(format!(
+                "Insufficient stock. Only {} available",
+                product.stock_quantity
+            )));
         }
 
         let cart = CartRepository::find_or_create_cart(pool, user_id).await?;
@@ -44,7 +59,7 @@ impl CartService {
         CartRepository::add_item(
             pool,
             &cart.id,
-            &req.product_id,
+            &product_id,
             req.quantity,
             product.price,
         ).await?;
@@ -59,13 +74,35 @@ impl CartService {
         req: UpdateCartRequest,
     ) -> Result<CartWithItems, AppError> {
         let cart = CartRepository::find_or_create_cart(pool, user_id).await?;
-
-        CartRepository::update_item_quantity(
-            pool,
-            &cart.id,
-            item_id,
-            req.quantity,
-        ).await?;
+        
+        // If quantity is 0, remove the item
+        if req.quantity == 0 {
+            CartRepository::remove_item(pool, &cart.id, item_id).await?;
+        } else {
+            // Check stock before updating
+            let item = sqlx::query!(
+                r#"
+                SELECT ci.product_id, p.stock_quantity
+                FROM cart_items ci
+                JOIN products p ON ci.product_id = p.id
+                WHERE ci.cart_id = $1 AND ci.id = $2
+                "#,
+                cart.id,
+                item_id
+            )
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::not_found("Cart item"))?;
+            
+            if item.stock_quantity < req.quantity {
+                return Err(AppError::bad_request(format!(
+                    "Insufficient stock. Only {} available",
+                    item.stock_quantity
+                )));
+            }
+            
+            CartRepository::update_item_quantity(pool, &cart.id, item_id, req.quantity).await?;
+        }
 
         Self::get_cart(pool, user_id).await
     }
@@ -91,28 +128,3 @@ impl CartService {
     }
 }
 
-impl From<CartItemWithProduct> for CartItemResponse {
-    fn from(item: CartItemWithProduct) -> Self {
-        CartItemResponse {
-            id: item.id,
-            product_id: item.product_id,
-            name: item.name,
-            slug: item.slug,
-            quantity: item.quantity,
-            price: item.price.to_string(),
-            total: item.total.unwrap_or_default().to_string(),
-            image_url: item.image_url,
-            in_stock: true,
-        }
-    }
-}
-
-impl From<CartWithItems> for CartResponse {
-    fn from(cart: CartWithItems) -> Self {
-        CartResponse {
-            items: cart.items.into_iter().map(|i| i.into()).collect(),
-            total_items: cart.total_items,
-            subtotal: cart.subtotal.to_string(),
-        }
-    }
-}

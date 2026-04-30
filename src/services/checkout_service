@@ -1,0 +1,75 @@
+use crate::errors::AppError;
+use crate::repositories::{CartRepository, OrderRepository};
+use sqlx::PgPool;
+use uuid::Uuid;
+use rust_decimal::Decimal;
+
+pub struct CheckoutService;
+
+impl CheckoutService {
+    pub async fn checkout(
+        pool: &PgPool,
+        user_id: &Uuid,
+        shipping_address_id: &Uuid,
+        payment_method: &str,
+    ) -> Result<Uuid, AppError> {
+        // Start a transaction
+        let mut tx = pool.begin().await.map_err(AppError::Database)?;
+        
+        // Get user's cart
+        let cart = CartRepository::find_or_create_cart(&mut tx, user_id).await?;
+        
+        // Get cart items with product details
+        let items = CartRepository::get_cart_with_items(&mut tx, &cart.id).await?;
+        
+        if items.is_empty() {
+            return Err(AppError::bad_request("Cart is empty"));
+        }
+        
+        // Calculate total
+        let total = items.iter()
+            .fold(Decimal::new(0, 0), |acc, item| acc + item.total.unwrap_or_default());
+        
+        // Create order
+        let order_id = OrderRepository::create_order(
+            &mut tx,
+            user_id,
+            shipping_address_id,
+            total,
+            payment_method,
+        ).await?;
+        
+        // Create order items
+        for item in items {
+            OrderRepository::create_order_item(
+                &mut tx,
+                &order_id,
+                &item.product_id,
+                item.quantity,
+                item.price,
+            ).await?;
+            
+            // Update product stock
+            sqlx::query!(
+                r#"
+                UPDATE products
+                SET stock_quantity = stock_quantity - $1,
+                    updated_at = NOW()
+                WHERE id = $2
+                "#,
+                item.quantity,
+                item.product_id
+            )
+            .execute(&mut tx)
+            .await?;
+        }
+        
+        // Clear the cart
+        CartRepository::clear_cart(&mut tx, &cart.id).await?;
+        
+        // Commit transaction
+        tx.commit().await.map_err(AppError::Database)?;
+        
+        Ok(order_id)
+    }
+}

@@ -4,7 +4,7 @@ use axum::{
 };
 use uuid::Uuid;
 use crate::app::state::AppState;
-use crate::dtos::{CartCheckoutRequest, OrderResponse, UpdateOrderStatusRequest};
+use crate::dtos::{CheckoutRequest, OrderResponse, UpdateOrderStatusRequest};
 use crate::services::OrderService;
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
@@ -13,7 +13,7 @@ use crate::types::PaginationParams;
 pub async fn checkout(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
-    Json(req): Json<CartCheckoutRequest>,
+    Json(req): Json<CheckoutRequest>,
 ) -> Result<Json<crate::dtos::CheckoutResponse>, AppError> {
     let result = OrderService::checkout(
         state.get_db_pool(),
