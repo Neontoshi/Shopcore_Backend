@@ -136,49 +136,29 @@ impl ProductRepository {
              FROM products WHERE 1=1"
         );
         
-        let mut params: Vec<String> = vec![];
-        let mut param_count = 1;
-        
         if let Some(is_active) = is_active {
-            sql.push_str(&format!(" AND is_active = ${}", param_count));
-            params.push(is_active.to_string());
-            param_count += 1;
+            sql.push_str(&format!(" AND is_active = {}", if is_active { "TRUE" } else { "FALSE" }));
         }
         
         if let Some(category_id) = category_id {
-            sql.push_str(&format!(" AND category_id = ${}", param_count));
-            params.push(category_id.to_string());
-            param_count += 1;
+            sql.push_str(&format!(" AND category_id = '{}'", category_id));
         }
         
         if let Some(min_price) = min_price {
-            sql.push_str(&format!(" AND price >= ${}", param_count));
-            params.push(min_price.to_string());
-            param_count += 1;
+            sql.push_str(&format!(" AND price >= {}", min_price));
         }
         
         if let Some(max_price) = max_price {
-            sql.push_str(&format!(" AND price <= ${}", param_count));
-            params.push(max_price.to_string());
-            param_count += 1;
+            sql.push_str(&format!(" AND price <= {}", max_price));
         }
         
         if let Some(query_str) = query {
-            sql.push_str(&format!(" AND (name ILIKE ${} OR description ILIKE ${})", param_count, param_count));
-            params.push(format!("%{}%", query_str));
-            param_count += 1;
+            sql.push_str(&format!(" AND (name ILIKE '%{}%' OR description ILIKE '%{}%')", query_str, query_str));
         }
         
-        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ${} OFFSET ${}", param_count, param_count + 1));
+        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {} OFFSET {}", limit, offset));
         
-        let mut query_builder = sqlx::query_as::<_, Product>(&sql);
-        for param in &params {
-            query_builder = query_builder.bind(param);
-        }
-        
-        let products = query_builder
-            .bind(limit)
-            .bind(offset)
+        let products = sqlx::query_as::<_, Product>(&sql)
             .fetch_all(pool)
             .await?;
         
@@ -243,7 +223,6 @@ impl ProductRepository {
         Ok(products)
     }
 
-    // Version for use with transactions
     pub async fn update_stock<'a, E>(executor: E, product_id: &Uuid, quantity: i32) -> Result<(), AppError>
     where
         E: sqlx::Executor<'a, Database = sqlx::Postgres>,
@@ -263,7 +242,6 @@ impl ProductRepository {
         Ok(())
     }
 
-    // Version for use with transactions (accepts Executor)
     pub async fn find_by_id_tx<'a, E>(executor: E, id: &Uuid) -> Result<Option<Product>, AppError>
     where
         E: sqlx::Executor<'a, Database = sqlx::Postgres>,

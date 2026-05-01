@@ -1,5 +1,5 @@
 // Error code constants
-pub mod ErrorCode {
+// pub mod ErrorCode {
     // Auth errors
     pub const INVALID_CREDENTIALS: &str = "INVALID_CREDENTIALS";
     pub const ACCOUNT_DEACTIVATED: &str = "ACCOUNT_DEACTIVATED";
@@ -38,4 +38,4 @@ pub mod ErrorCode {
     pub const VALIDATION_ERROR: &str = "VALIDATION_ERROR";
     pub const DATABASE_ERROR: &str = "DATABASE_ERROR";
     pub const INTERNAL_ERROR: &str = "INTERNAL_SERVER_ERROR";
-}
+// }
