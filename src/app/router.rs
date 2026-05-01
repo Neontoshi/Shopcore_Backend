@@ -1,5 +1,5 @@
 use axum::{routing::{get, post, put, delete}, Router, middleware};
-use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin};
+use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin, review};
 use crate::middleware::auth::auth_middleware;
 use super::state::AppState;
 
@@ -18,6 +18,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/orders/{order_id}/status", put(order::update_order_status))
         .route("/api/addresses", get(address::get_addresses).post(address::create_address))
         .route("/api/addresses/{address_id}", put(address::update_address).delete(address::delete_address))
+        // Review routes (authenticated)
+        .route("/api/reviews", post(review::create_review))
+        .route("/api/reviews/user/{product_id}", get(review::check_user_review))
+        .route("/api/reviews/{review_id}/helpful", post(review::mark_review_helpful))
+        .route("/api/reviews/{review_id}/replies", post(review::add_reply_to_review))
         // Admin routes (protected)
         .route("/api/admin/stats", get(admin::get_stats))
         .route("/api/admin/vendor/applications", get(admin::get_vendor_applications))
@@ -53,6 +58,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/products/search", get(product::search_products))
         .route("/api/products", get(product::list_products))
         .route("/api/products/{id}", get(product::get_product))
+        // Public review routes
+        .route("/api/reviews/product/{product_id}", get(review::get_product_reviews))
+        .route("/api/reviews/{review_id}/replies", get(review::get_review_replies))
         .merge(protected_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
         .merge(admin_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
         .with_state(state)

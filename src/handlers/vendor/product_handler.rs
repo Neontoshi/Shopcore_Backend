@@ -96,8 +96,8 @@ pub async fn create_product(
 
     let product_row = sqlx::query!(
         r#"
-        INSERT INTO products (name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, vendor_id, image_url)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO products (name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, vendor_id, image_url, weight)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id, name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, is_active, image_url, average_rating, total_reviews, created_at, updated_at
         "#,
         req.name,
@@ -109,7 +109,8 @@ pub async fn create_product(
         req.category_id,
         req.sku,
         auth_user.user_id,
-        req.image_url
+        req.image_url,
+        req.weight
     )
     .fetch_one(state.get_db_pool())
     .await?;
@@ -186,6 +187,7 @@ pub async fn update_product(
         req.category_id,
         req.is_active,
         req.image_url,
+        req.weight,
         product_id
     )
     .fetch_one(state.get_db_pool())

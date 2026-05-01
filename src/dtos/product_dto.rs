@@ -26,6 +26,7 @@ pub struct CreateProductRequest {
     pub category_id: Option<Uuid>,
     pub sku: Option<String>,
     pub image_url: Option<String>,
+    pub weight: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -58,6 +59,7 @@ pub struct ProductResponse {
     pub total_reviews: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub weight: Option<Decimal>,
     pub category: Option<CategoryInfo>,
 }
 
@@ -88,6 +90,7 @@ pub struct CategoryResponse {
     pub icon: Option<String>,
     pub image_url: Option<String>,
     pub display_order: i32,
+    pub weight: Option<Decimal>,
 }
 
 impl From<crate::models::Category> for CategoryResponse {
@@ -100,6 +103,7 @@ impl From<crate::models::Category> for CategoryResponse {
             icon: c.icon,
             image_url: c.image_url,
             display_order: c.display_order,
+            weight: None,
         }
     }
 }

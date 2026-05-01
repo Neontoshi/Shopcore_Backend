@@ -88,26 +88,26 @@ BEGIN
         (uuid_generate_v4(), 'Swimming', 'swimming', 'Swimwear, goggles, and pool accessories', sports_id, '🏊', 5);
 END $$;
 
--- ADMIN USER
+-- ADMIN USER - Password: admin123
 INSERT INTO users (id, email, password_hash, first_name, last_name, phone_number, role, is_active)
 VALUES (
     uuid_generate_v4(),
     'admin@shopcore.com',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTtYWOy1gMVNZa',
-    'Neon',
-    'TheDev',
-    '+2349012345678',
+    crypt('admin123', gen_salt('bf')),
+    'Super',
+    'Admin',
+    '+1234567890',
     'admin',
     true
 ) ON CONFLICT (email) DO NOTHING;
 
--- ADD TEST CUSTOMERS (so carts have valid user_ids)
+-- TEST CUSTOMERS - Password: customer123 or test123
 INSERT INTO users (id, email, password_hash, first_name, last_name, phone_number, role, is_active)
 VALUES 
     (
         uuid_generate_v4(),
         'customer1@example.com',
-        '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTtYWOy1gMVNZa',
+        crypt('customer123', gen_salt('bf')),
         'John',
         'Doe',
         '+1234567890',
@@ -116,18 +116,18 @@ VALUES
     ),
     (
         uuid_generate_v4(),
-        'customer2@example.com',
-        '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTtYWOy1gMVNZa',
+        'vendor@example.com',
+        crypt('customer123', gen_salt('bf')),
         'Jane',
         'Smith',
         '+1987654321',
-        'customer',
+        'vendor',
         true
     ),
     (
         uuid_generate_v4(),
         'test@example.com',
-        '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTtYWOy1gMVNZa',
+        crypt('test123', gen_salt('bf')),
         'Test',
         'User',
         '+1122334455',

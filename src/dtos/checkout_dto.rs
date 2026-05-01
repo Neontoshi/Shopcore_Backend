@@ -13,7 +13,10 @@ pub struct CheckoutRequest {
 pub struct CheckoutResponse {
     pub order_id: Uuid,
     pub order_number: String,
+    pub subtotal: String,
+    pub tax: String,
+    pub shipping_cost: String,
     pub total: String,
     pub payment_url: Option<String>,
-    pub message: String,  // Add this field
+    pub message: String,
 }

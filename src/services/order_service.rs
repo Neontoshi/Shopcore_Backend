@@ -1,16 +1,17 @@
-// use crate::models::{Order, OrderWithItems, Address};
+use rust_decimal::prelude::FromPrimitive;
 use crate::repositories::{CartRepository, OrderRepository, AddressRepository, ProductRepository};
+use crate::services::shipping_service::ShippingService;
 use crate::dtos::{CheckoutResponse, OrderResponse, OrderItemResponse};
 use crate::errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 pub struct OrderService;
 
 impl OrderService {
-    const TAX_RATE: Decimal = Decimal::from_parts(10, 0, 0, false, 2);
-    const SHIPPING_COST: Decimal = Decimal::from_parts(500, 0, 0, false, 2);
+    const TAX_RATE: Decimal = Decimal::from_parts(10, 0, 0, false, 0);
 
     pub async fn checkout(
         pool: &PgPool,
@@ -47,12 +48,24 @@ impl OrderService {
             .fold(Decimal::ZERO, |acc, item| acc + item.total.unwrap_or(Decimal::ZERO));
 
         let tax = subtotal * Self::TAX_RATE / Decimal::new(100, 0);
-        let total = subtotal + tax + Self::SHIPPING_COST;
+        
+        // Prepare cart items for shipping calculation
+        let shipping_items: Vec<(Uuid, i32)> = cart_items.iter()
+            .map(|item| (item.product_id, item.quantity))
+            .collect();
+        
+        let subtotal_f64 = subtotal.to_f64().unwrap_or(0.0);
+        let (shipping_cost_f64, _is_free, _total_weight) = ShippingService::calculate_shipping(
+            pool, 
+            &shipping_items, 
+            subtotal_f64
+        ).await?;
+        
+        let shipping_cost = Decimal::from_f64(shipping_cost_f64).unwrap_or(Decimal::ZERO);
+        let total = subtotal + tax + shipping_cost;
 
-        // ✅ SINGLE TRANSACTION
         let mut tx = pool.begin().await?;
 
-        // ✅ Validate stock inside transaction
         for item in &cart_items {
             let product = ProductRepository::find_by_id_tx(&mut *tx, &item.product_id).await?
                 .ok_or_else(|| AppError::not_found(&format!("Product {}", item.name)))?;
@@ -73,7 +86,7 @@ impl OrderService {
             &order_number,
             subtotal,
             tax,
-            Self::SHIPPING_COST,
+            shipping_cost,
             total,
             shipping_address_id,
             billing_address_id,
@@ -110,6 +123,9 @@ impl OrderService {
         Ok(CheckoutResponse {
             order_id: order.id,
             order_number: order.order_number,
+            subtotal: subtotal.to_string(),
+            tax: tax.to_string(),
+            shipping_cost: shipping_cost.to_string(),
             total: total.to_string(),
             payment_url: None,
             message: "Order placed successfully".into(),
