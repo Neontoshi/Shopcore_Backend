@@ -40,6 +40,7 @@ pub struct UpdateProductRequest {
     pub category_id: Option<Uuid>,
     pub is_active: Option<bool>,
     pub image_url: Option<String>,
+    pub weight: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize)]

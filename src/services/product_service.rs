@@ -63,6 +63,7 @@ impl ProductService {
         };
         
         Ok(ProductResponse {
+            weight: None,
             id: product.id,
             name: product.name,
             slug: product.slug,
@@ -152,6 +153,7 @@ impl ProductService {
 impl From<Product> for ProductResponse {
     fn from(product: Product) -> Self {
         ProductResponse {
+        weight: None,
             id: product.id,
             name: product.name,
             slug: product.slug,

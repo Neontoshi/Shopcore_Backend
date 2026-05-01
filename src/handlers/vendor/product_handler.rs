@@ -9,7 +9,6 @@ use crate::dtos::product_dto::{CreateProductRequest, UpdateProductRequest, Produ
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
 
-// Vendor: Get my products
 pub async fn get_my_products(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -57,6 +56,7 @@ pub async fn get_my_products(
             total_reviews: Some(row.total_reviews),
             created_at: row.created_at,
             updated_at: row.updated_at,
+            weight: None,
             category: None,
         }
     }).collect();
@@ -80,7 +80,6 @@ pub async fn get_my_products(
     })))
 }
 
-// Vendor: Create a product
 pub async fn create_product(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -98,7 +97,7 @@ pub async fn create_product(
         r#"
         INSERT INTO products (name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, vendor_id, image_url, weight)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        RETURNING id, name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, is_active, image_url, average_rating, total_reviews, created_at, updated_at
+        RETURNING id, name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, is_active, image_url, weight, average_rating, total_reviews, created_at, updated_at
         "#,
         req.name,
         req.slug,
@@ -110,7 +109,7 @@ pub async fn create_product(
         req.sku,
         auth_user.user_id,
         req.image_url,
-        req.weight
+        req.weight,
     )
     .fetch_one(state.get_db_pool())
     .await?;
@@ -131,6 +130,7 @@ pub async fn create_product(
         total_reviews: Some(product_row.total_reviews),
         created_at: product_row.created_at,
         updated_at: product_row.updated_at,
+        weight: product_row.weight,
         category: None,
     };
 
@@ -140,14 +140,12 @@ pub async fn create_product(
     })))
 }
 
-// Vendor: Update a product
 pub async fn update_product(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(product_id): Path<Uuid>,
     Json(req): Json<UpdateProductRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // Check if product belongs to vendor
     let existing = sqlx::query!(
         r#"
         SELECT vendor_id FROM products WHERE id = $1
@@ -174,9 +172,10 @@ pub async fn update_product(
             category_id = COALESCE($7, category_id),
             is_active = COALESCE($8, is_active),
             image_url = COALESCE($9, image_url),
+            weight = COALESCE($10, weight),
             updated_at = NOW()
-        WHERE id = $10
-        RETURNING id, name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, is_active, image_url, average_rating, total_reviews, created_at, updated_at
+        WHERE id = $11
+        RETURNING id, name, slug, description, price, compare_at_price, stock_quantity, category_id, sku, is_active, image_url, weight, average_rating, total_reviews, created_at, updated_at
         "#,
         req.name,
         req.slug,
@@ -209,6 +208,7 @@ pub async fn update_product(
         total_reviews: Some(product_row.total_reviews),
         created_at: product_row.created_at,
         updated_at: product_row.updated_at,
+        weight: product_row.weight,
         category: None,
     };
 
@@ -218,13 +218,11 @@ pub async fn update_product(
     })))
 }
 
-// Vendor: Delete a product
 pub async fn delete_product(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(product_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // Check if product belongs to vendor
     let existing = sqlx::query!(
         r#"
         SELECT vendor_id FROM products WHERE id = $1
@@ -239,7 +237,6 @@ pub async fn delete_product(
         return Err(AppError::forbidden("You don't have permission to delete this product"));
     }
 
-    // Check if product is referenced in any orders
     let order_count = sqlx::query!(
         r#"
         SELECT COUNT(*) as count FROM order_items WHERE product_id = $1
@@ -255,7 +252,6 @@ pub async fn delete_product(
         return Err(AppError::bad_request("This product has existing orders. Deactivate it instead."));
     }
 
-    // Also check if product is in any active carts
     let cart_count = sqlx::query!(
         r#"
         SELECT COUNT(*) as count FROM cart_items WHERE product_id = $1
@@ -271,7 +267,6 @@ pub async fn delete_product(
         return Err(AppError::bad_request("This product is in customer carts. Deactivate it instead."));
     }
 
-    // If no references, proceed with deletion
     sqlx::query!(
         r#"
         DELETE FROM products WHERE id = $1
