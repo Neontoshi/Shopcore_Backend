@@ -6,7 +6,6 @@ use uuid::Uuid;
 use crate::app::state::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
-use rust_decimal::Decimal;
 
 // Admin: Get dashboard statistics
 pub async fn get_stats(
@@ -44,7 +43,7 @@ pub async fn get_stats(
     let revenue_result = sqlx::query!("SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE payment_status = 'paid'")
         .fetch_one(state.get_db_pool())
         .await?;
-    let total_revenue = revenue_result.total.unwrap_or(Decimal::ZERO);
+    let total_revenue = revenue_result.total.unwrap_or(Default::default());
 
     let pending_apps = sqlx::query!("SELECT COUNT(*) as count FROM vendor_applications WHERE status = 'pending'")
         .fetch_one(state.get_db_pool())
@@ -108,7 +107,7 @@ pub async fn get_vendor_applications(
     Ok(Json(applications))
 }
 
-// Admin: Review vendor application
+// Admin: Review vendor application (approve/reject)
 pub async fn review_application(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -121,6 +120,21 @@ pub async fn review_application(
 
     let status = req.get("status").and_then(|s| s.as_str()).ok_or_else(|| AppError::bad_request("Status is required"))?;
 
+    // Get the application to find the user_id
+    let application = sqlx::query!(
+        r#"
+        SELECT user_id FROM vendor_applications WHERE id = $1
+        "#,
+        application_id
+    )
+    .fetch_optional(state.get_db_pool())
+    .await?
+    .ok_or_else(|| AppError::not_found("Application"))?;
+
+    // Start a transaction
+    let mut tx = state.get_db_pool().begin().await?;
+
+    // Update application status
     sqlx::query!(
         r#"
         UPDATE vendor_applications
@@ -131,8 +145,24 @@ pub async fn review_application(
         auth_user.user_id,
         application_id
     )
-    .execute(state.get_db_pool())
+    .execute(&mut *tx)
     .await?;
+
+    // If approved, update user role to vendor
+    if status == "approved" {
+        sqlx::query!(
+            r#"
+            UPDATE users SET role = 'vendor', updated_at = NOW()
+            WHERE id = $1
+            "#,
+            application.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Commit transaction
+    tx.commit().await?;
 
     Ok(Json(serde_json::json!({
         "message": format!("Application {} successfully", status)
@@ -173,7 +203,7 @@ pub async fn get_users(
     Ok(Json(user_list))
 }
 
-// Admin: Update user status
+// Admin: Update user status (activate/suspend)
 pub async fn update_user_status(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,

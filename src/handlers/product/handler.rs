@@ -1,68 +1,13 @@
 use axum::{
-    extract::{State, Path, Query, Extension},
+    extract::{State, Query},
     Json,
 };
 use uuid::Uuid;
 use crate::app::state::AppState;
-use crate::dtos::{
-    CreateProductRequest, UpdateProductRequest, ProductFilter, 
-    ProductResponse, ApiResponse, PaginatedResponse
-};
-use crate::services::ProductService;
+use crate::dtos::{ProductFilter, ProductResponse, PaginatedResponse, CategoryResponse, ApiResponse};
 use crate::errors::AppError;
-use crate::middleware::auth::AuthUser;
-use validator::Validate;
-
-pub async fn create_product(
-    State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthUser>,
-    Json(req): Json<CreateProductRequest>,
-) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
-    if auth_user.role != "admin" {
-        return Err(AppError::forbidden("Admin access required"));
-    }
-    if let Err(errors) = req.validate() {
-        return Err(AppError::validation(errors.to_string()));
-    }
-    let product = ProductService::create_product(state.get_db_pool(), req).await?;
-    Ok(Json(ApiResponse::success(product)))
-}
-
-pub async fn get_product(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
-    match ProductService::get_product(state.get_db_pool(), &id).await {
-        Ok(product) => Ok(Json(ApiResponse::success(product))),
-        Err(AppError::NotFound(_)) => Ok(Json(ApiResponse::error("Product not found"))),
-        Err(e) => Err(e),
-    }
-}
-
-pub async fn update_product(
-    State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthUser>,
-    Path(id): Path<Uuid>,
-    Json(req): Json<UpdateProductRequest>,
-) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
-    if auth_user.role != "admin" {
-        return Err(AppError::forbidden("Admin access required"));
-    }
-    let product = ProductService::update_product(state.get_db_pool(), &id, req).await?;
-    Ok(Json(ApiResponse::success(product)))
-}
-
-pub async fn delete_product(
-    State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthUser>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<()>>, AppError> {
-    if auth_user.role != "admin" {
-        return Err(AppError::forbidden("Admin access required"));
-    }
-    ProductService::delete_product(state.get_db_pool(), &id).await?;
-    Ok(Json(ApiResponse::success(())))
-}
+use crate::repositories::ProductRepository;
+use crate::repositories::CategoryRepository;
 
 pub async fn list_products(
     State(state): State<AppState>,
@@ -73,25 +18,28 @@ pub async fn list_products(
     let limit = page_size as i64;
     let offset = (page - 1) as i64 * limit;
     
-    let products = crate::repositories::ProductRepository::search(
+    // Default is_active to true for public listing (only show active products)
+    let is_active = params.is_active.or(Some(true));
+    
+    let products = ProductRepository::search(
         state.get_db_pool(),
         params.query.as_deref(),
         params.category_id,
         params.min_price,
         params.max_price,
-        params.is_active,
+        is_active,
         limit,
         offset,
-    ).await.map_err(|_| AppError::internal_server_error())?;
+    ).await?;
     
-    let total = crate::repositories::ProductRepository::count_search(
+    let total = ProductRepository::count_search(
         state.get_db_pool(),
         params.query.as_deref(),
         params.category_id,
         params.min_price,
         params.max_price,
-        params.is_active,
-    ).await.map_err(|_| AppError::internal_server_error())?;
+        is_active,
+    ).await?;
     
     let product_responses: Vec<ProductResponse> = products.into_iter().map(|p| p.into()).collect();
     
@@ -100,10 +48,9 @@ pub async fn list_products(
 
 pub async fn list_categories(
     State(state): State<AppState>,
-) -> Result<Json<ApiResponse<Vec<crate::dtos::CategoryResponse>>>, AppError> {
-    let categories = crate::repositories::CategoryRepository::find_all_active(state.get_db_pool())
-        .await
-        .map_err(|_| AppError::internal_server_error())?;
+) -> Result<Json<ApiResponse<Vec<CategoryResponse>>>, AppError> {
+    let categories = CategoryRepository::find_all_active(state.get_db_pool())
+        .await?;
     Ok(Json(ApiResponse::success(
         categories.into_iter().map(|c| c.into()).collect()
     )))
@@ -112,18 +59,17 @@ pub async fn list_categories(
 pub async fn get_featured_products(
     State(state): State<AppState>,
 ) -> Result<Json<ApiResponse<Vec<ProductResponse>>>, AppError> {
-    let products = crate::repositories::ProductRepository::search(
+    let products = ProductRepository::search(
         state.get_db_pool(),
         None,
         None,
         None,
         None,
-        Some(true),
+        Some(true), // Only active products
         8,
         0,
-    )
-    .await
-    .map_err(|_| AppError::internal_server_error())?;
+    ).await?;
+    
     Ok(Json(ApiResponse::success(
         products.into_iter().map(|p| p.into()).collect()
     )))
@@ -131,22 +77,52 @@ pub async fn get_featured_products(
 
 pub async fn search_products(
     State(state): State<AppState>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
+    Query(params): Query<ProductFilter>,
 ) -> Result<Json<ApiResponse<Vec<ProductResponse>>>, AppError> {
-    let query = params.get("q").map(|s| s.as_str());
-    let products = crate::repositories::ProductRepository::search(
+    let products = ProductRepository::search(
         state.get_db_pool(),
-        query,
+        params.query.as_deref(),
         None,
         None,
         None,
-        Some(true),
+        Some(true), // Only active products
         20,
         0,
-    )
-    .await
-    .map_err(|_| AppError::internal_server_error())?;
+    ).await?;
+    
     Ok(Json(ApiResponse::success(
         products.into_iter().map(|p| p.into()).collect()
     )))
+}
+
+pub async fn get_product(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
+    let product = ProductRepository::find_by_id(state.get_db_pool(), &id).await?
+        .ok_or_else(|| AppError::not_found("Product"))?;
+    
+    Ok(Json(ApiResponse::success(product.into())))
+}
+
+pub async fn create_product(
+    State(state): State<AppState>,
+    // Admin only endpoint
+) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
+    // This would be in admin handler
+    Err(AppError::forbidden("Admin access required"))
+}
+
+pub async fn update_product(
+    State(state): State<AppState>,
+    // Admin only endpoint
+) -> Result<Json<ApiResponse<ProductResponse>>, AppError> {
+    Err(AppError::forbidden("Admin access required"))
+}
+
+pub async fn delete_product(
+    State(state): State<AppState>,
+    // Admin only endpoint
+) -> Result<Json<ApiResponse<()>>, AppError> {
+    Err(AppError::forbidden("Admin access required"))
 }

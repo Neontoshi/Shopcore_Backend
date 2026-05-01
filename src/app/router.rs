@@ -18,7 +18,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/orders/{order_id}/status", put(order::update_order_status))
         .route("/api/addresses", get(address::get_addresses).post(address::create_address))
         .route("/api/addresses/{address_id}", put(address::update_address).delete(address::delete_address))
-        // Admin routes
+        // Admin routes (protected)
         .route("/api/admin/stats", get(admin::get_stats))
         .route("/api/admin/vendor/applications", get(admin::get_vendor_applications))
         .route("/api/admin/vendor/applications/{application_id}", put(admin::review_application))
@@ -37,8 +37,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status));
 
     let admin_routes = Router::new()
-        .route("/api/admin/products", post(product::create_product))
-        .route("/api/admin/products/{id}", put(product::update_product).delete(product::delete_product));
+        .route("/api/admin/products/{product_id}/status", put(admin::update_product_status));
 
     Router::new()
         .route("/health", get(health::health_check))
