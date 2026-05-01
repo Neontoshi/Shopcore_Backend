@@ -18,3 +18,4 @@ pub use address_dto::*;
 pub use api_response::*;
 pub mod vendor_dto;
 pub use vendor_dto::*;
+pub mod shipping_settings_dto;

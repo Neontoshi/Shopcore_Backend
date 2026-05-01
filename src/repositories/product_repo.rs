@@ -47,6 +47,7 @@ impl ProductRepository {
                 price as "price: Decimal", 
                 compare_at_price as "compare_at_price: Decimal", 
                 stock_quantity, category_id, sku, is_active, image_url,
+                weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
                 created_at, updated_at
@@ -69,6 +70,7 @@ impl ProductRepository {
                 price as "price: Decimal", 
                 compare_at_price as "compare_at_price: Decimal", 
                 stock_quantity, category_id, sku, is_active, image_url,
+                weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
                 created_at, updated_at
@@ -130,7 +132,7 @@ impl ProductRepository {
         offset: i64,
     ) -> Result<Vec<Product>, AppError> {
         let mut sql = String::from(
-            "SELECT id, name, slug, description, price, compare_at_price, \
+            "SELECT id, name, slug, description, price, compare_at_price, weight, \
              stock_quantity, category_id, sku, is_active, image_url, \
              average_rating, total_reviews, created_at, updated_at \
              FROM products WHERE 1=1"
@@ -211,6 +213,7 @@ impl ProductRepository {
                 price as "price: Decimal", 
                 compare_at_price as "compare_at_price: Decimal", 
                 stock_quantity, category_id, sku, is_active, image_url,
+                weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
                 created_at, updated_at
@@ -254,6 +257,7 @@ impl ProductRepository {
                 price as "price: Decimal", 
                 compare_at_price as "compare_at_price: Decimal", 
                 stock_quantity, category_id, sku, is_active, image_url,
+                weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
                 created_at, updated_at

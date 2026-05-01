@@ -32,11 +32,12 @@ impl ProductService {
             category_id: req.category_id,
             sku: req.sku,
             is_active: true,
+            weight: req.weight,
             image_url: req.image_url,
             average_rating: Decimal::ZERO,
             total_reviews: 0,
             created_at: Utc::now(),
-            updated_at: Utc::now(),
+            updated_at: Utc::now(), 
         };
         
         ProductRepository::create(pool, &product).await?;
@@ -63,7 +64,7 @@ impl ProductService {
         };
         
         Ok(ProductResponse {
-            weight: None,
+            weight: product.weight,
             id: product.id,
             name: product.name,
             slug: product.slug,
@@ -149,11 +150,10 @@ impl ProductService {
     }
 }
 
-// Update the From<Product> implementation
 impl From<Product> for ProductResponse {
     fn from(product: Product) -> Self {
         ProductResponse {
-        weight: None,
+            weight: product.weight,  // FIXED!
             id: product.id,
             name: product.name,
             slug: product.slug,

@@ -1,6 +1,7 @@
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pgcrypto; 
 
 -- USERS
 CREATE TABLE users (
@@ -705,3 +706,18 @@ CREATE TABLE IF NOT EXISTS vendor_orders (
 
 -- Add weight column to products
 ALTER TABLE products ADD COLUMN IF NOT EXISTS weight DECIMAL(10,2) DEFAULT 0;
+
+-- SHIPPING SETTINGS
+CREATE TABLE IF NOT EXISTS shipping_settings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rate_per_kg DECIMAL(10,2) NOT NULL DEFAULT 2.50,
+    free_shipping_threshold DECIMAL(10,2) NOT NULL DEFAULT 100.00,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    updated_by UUID REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default shipping settings
+INSERT INTO shipping_settings (rate_per_kg, free_shipping_threshold)
+VALUES (2.50, 100.00);

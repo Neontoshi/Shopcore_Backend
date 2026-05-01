@@ -42,6 +42,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status));
 
     let admin_routes = Router::new()
+        .route("/api/admin/shipping/settings", get(admin::get_shipping_settings).put(admin::update_shipping_settings))
         .route("/api/admin/products/{product_id}/status", put(admin::update_product_status));
 
     Router::new()
@@ -58,6 +59,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/products/search", get(product::search_products))
         .route("/api/products", get(product::list_products))
         .route("/api/products/{id}", get(product::get_product))
+        .route("/api/shipping/settings", get(admin::get_shipping_settings))
         // Public review routes
         .route("/api/reviews/product/{product_id}", get(review::get_product_reviews))
         .route("/api/reviews/{review_id}/replies", get(review::get_review_replies))
