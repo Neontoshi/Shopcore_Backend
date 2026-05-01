@@ -196,7 +196,7 @@ impl ProductRepository {
         let mut sql = String::from("SELECT COUNT(*) FROM products WHERE 1=1");
         
         if let Some(is_active) = is_active {
-            sql.push_str(&format!(" AND is_active = {}", is_active));
+            sql.push_str(&format!(" AND is_active = {}", if is_active { "TRUE" } else { "FALSE" }));
         }
         
         if let Some(category_id) = category_id {
