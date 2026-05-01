@@ -2,8 +2,11 @@ use tower_http::cors::CorsLayer;
 use axum::http::{HeaderValue, Method, header};
 
 pub fn configure_cors() -> CorsLayer {
+    let allowed_origin = std::env::var("ALLOWED_ORIGIN")
+        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+
     CorsLayer::new()
-        .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
+        .allow_origin(allowed_origin.parse::<HeaderValue>().unwrap())
         .allow_methods([
             Method::GET,
             Method::POST,
