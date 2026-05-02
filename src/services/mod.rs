@@ -7,6 +7,8 @@ pub mod email_service;
 pub mod user_service;
 pub mod vendor_service;
 pub mod review_service;
+pub mod payment_service;
+pub mod shipping_service;
 
 pub use auth_service::AuthService;
 pub use product_service::ProductService;
@@ -16,4 +18,6 @@ pub use address_service::AddressService;
 pub use email_service::EmailService;
 pub use user_service::UserService;
 pub use review_service::ReviewService;
-pub use vendor_service::VendorService;pub mod shipping_service;
+pub use vendor_service::VendorService;
+pub use payment_service::PaymentService;
+pub use shipping_service::ShippingService;

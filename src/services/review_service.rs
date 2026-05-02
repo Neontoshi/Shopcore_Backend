@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::ReviewReply;
+// use crate::models::ReviewReply;
 use crate::repositories::ReviewRepository;
 use crate::dtos::review_dto::{CreateReviewRequest, ProductRatingSummary, ReviewResponse, ReplyResponse};
 use crate::errors::AppError;

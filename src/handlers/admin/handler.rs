@@ -284,6 +284,7 @@ pub async fn get_all_orders(
         r#"
         SELECT 
             o.id, o.order_number, o.total, o.status, o.created_at,
+            o.payment_method, o.payment_status,
             u.email as customer_email,
             CONCAT(u.first_name, ' ', u.last_name) as customer_name
         FROM orders o
@@ -297,6 +298,8 @@ pub async fn get_all_orders(
     let order_list = orders.into_iter().map(|o| {
         serde_json::json!({
             "id": o.id,
+            "payment_method": o.payment_method,
+            "payment_status": o.payment_status,
             "order_number": o.order_number,
             "total": o.total,
             "status": o.status,
@@ -307,4 +310,46 @@ pub async fn get_all_orders(
     }).collect();
 
     Ok(Json(order_list))
+}
+
+pub async fn mark_order_paid(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Path(order_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if auth_user.role != "admin" {
+        return Err(AppError::forbidden("Admin access required"));
+    }
+
+    let order = sqlx::query!(
+        "SELECT payment_method, payment_status FROM orders WHERE id = $1",
+        order_id
+    )
+    .fetch_optional(state.get_db_pool())
+    .await?
+    .ok_or_else(|| AppError::not_found("Order"))?;
+
+    if order.payment_status == "paid" {
+        return Err(AppError::bad_request("Order is already paid"));
+    }
+
+    let mut tx = state.get_db_pool().begin().await?;
+
+    sqlx::query!(
+        "UPDATE orders SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1",
+        order_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE payment_transactions SET status = 'completed', updated_at = NOW() WHERE order_id = $1",
+        order_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Json(serde_json::json!({ "message": "Order marked as paid" })))
 }

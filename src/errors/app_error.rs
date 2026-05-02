@@ -25,6 +25,8 @@ pub enum AppError {
     InternalServerError,
     #[error("{0}")]
     EmailError(String),
+    #[error("{0}")]
+    PaymentError(String),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -51,6 +53,7 @@ impl IntoResponse for AppError {
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             AppError::InternalServerError => (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong. Please try again.".to_string()),
             AppError::EmailError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::PaymentError(msg) => (StatusCode::PAYMENT_REQUIRED, msg),
         };
 
         let body = json!({
@@ -88,5 +91,8 @@ impl AppError {
     }
     pub fn internal_server_error() -> Self {
         AppError::InternalServerError
+    }
+    pub fn payment_error(message: impl Into<String>) -> Self {
+        AppError::PaymentError(message.into())
     }
 }

@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 use uuid::Uuid;
-use rust_decimal::Decimal;
+// use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 
 pub struct ShippingService;

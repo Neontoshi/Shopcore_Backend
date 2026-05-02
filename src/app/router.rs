@@ -1,5 +1,5 @@
 use axum::{routing::{get, post, put, delete}, Router, middleware};
-use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin, review};
+use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin, review, payments, webhook};
 use crate::middleware::auth::auth_middleware;
 use super::state::AppState;
 
@@ -31,6 +31,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/users/{user_id}/status", put(admin::update_user_status))
         .route("/api/admin/products", get(admin::get_all_products))
         .route("/api/admin/orders", get(admin::get_all_orders))
+        .route("/api/admin/orders/{order_id}/mark-paid", put(admin::mark_order_paid))
         // Vendor routes
         .route("/api/vendor/products", get(vendor::get_my_products).post(vendor::create_product))
         .route("/api/vendor/products/{product_id}", put(vendor::update_product).delete(vendor::delete_product))
@@ -39,8 +40,13 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/vendor/profile", get(vendor::get_my_vendor_profile))
         .route("/api/vendor/stats", get(vendor::get_vendor_stats))
         .route("/api/vendor/orders", get(vendor::get_vendor_orders))
-        .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status));
-
+        .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status))
+        
+        // Payment routes
+        .route("/api/payments/initiate", post(payments::initiate_payment))
+        .route("/api/payments/crypto/status/:charge_id", get(payments::get_crypto_status));
+        
+        
     let admin_routes = Router::new()
         .route("/api/admin/shipping/settings", get(admin::get_shipping_settings).put(admin::update_shipping_settings))
         .route("/api/admin/products/{product_id}/status", put(admin::update_product_status));
@@ -60,9 +66,16 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/products", get(product::list_products))
         .route("/api/products/{id}", get(product::get_product))
         .route("/api/shipping/settings", get(admin::get_shipping_settings))
+
         // Public review routes
         .route("/api/reviews/product/{product_id}", get(review::get_product_reviews))
         .route("/api/reviews/{review_id}/replies", get(review::get_review_replies))
+        
+        // Webhook routes
+        .route("/api/webhook/stripe", post(webhook::stripe_webhook))
+        .route("/api/webhook/coinbase", post(webhook::coinbase_webhook))
+
+
         .merge(protected_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
         .merge(admin_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
         .with_state(state)

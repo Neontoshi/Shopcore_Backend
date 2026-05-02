@@ -15,17 +15,15 @@ pub async fn checkout(
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<CheckoutRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if let Err(errors) = req.validate() {
-        return Err(AppError::validation(errors.to_string()));
-    }
-    
+    // Remove the validate block entirely
+
     let order_id = CheckoutService::checkout(
         state.get_db_pool(),
         &auth_user.user_id,
         &req.shipping_address_id,
         &req.payment_method,
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "message": "Order placed successfully",
