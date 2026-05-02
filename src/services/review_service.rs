@@ -66,12 +66,13 @@ impl ReviewService {
     }
     
     pub async fn mark_helpful(
-        pool: &PgPool,
-        review_id: &Uuid,
-        is_helpful: bool,
+    pool: &PgPool,
+    review_id: &Uuid,
+    user_id: &Uuid,
+    is_helpful: bool,
     ) -> Result<(), AppError> {
-        ReviewRepository::mark_helpful(pool, review_id, is_helpful).await?;
-        Ok(())
+    ReviewRepository::mark_helpful(pool, review_id, user_id, is_helpful).await?;
+    Ok(())
     }
     
     pub async fn add_reply(

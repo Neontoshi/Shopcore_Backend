@@ -36,6 +36,7 @@ impl ProductService {
             image_url: req.image_url,
             average_rating: Decimal::ZERO,
             total_reviews: 0,
+            vendor_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(), 
         };

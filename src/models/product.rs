@@ -21,10 +21,10 @@ pub struct Product {
     pub weight: Option<Decimal>,
     pub average_rating: Decimal,
     pub total_reviews: i32,
+    pub vendor_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
-
 impl Product {
     pub fn is_in_stock(&self) -> bool {
         self.stock_quantity > 0

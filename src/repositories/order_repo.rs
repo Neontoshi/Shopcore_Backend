@@ -64,15 +64,16 @@ impl OrderRepository {
 pub async fn add_order_items(
     executor: &mut PgConnection,
     order_id: &Uuid,
-    items: Vec<(Uuid, i32, Decimal, String, Option<String>)>,
+    items: Vec<(Uuid, i32, Decimal, String, Option<String>, Option<Uuid>)>, // added vendor_id
 ) -> Result<()> {
-    for (product_id, quantity, price, product_name, sku) in items {
+    for (product_id, quantity, price, product_name, sku, vendor_id) in items {
         sqlx::query!(
             r#"
             INSERT INTO order_items (
-                id, order_id, product_id, quantity, price, total, product_name, product_sku
+                id, order_id, product_id, quantity, price, total, 
+                product_name, product_sku, vendor_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
             Uuid::new_v4(),
             order_id,
@@ -81,15 +82,14 @@ pub async fn add_order_items(
             price,
             price * Decimal::new(quantity as i64, 0),
             product_name,
-            sku
+            sku,
+            vendor_id
         )
         .execute(&mut *executor)
         .await?;
     }
-
     Ok(())
 }
-
     pub async fn find_by_id<'a, E>(
         executor: E,
         order_id: &Uuid,

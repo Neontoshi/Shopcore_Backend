@@ -1,5 +1,5 @@
 use axum::{routing::{get, post, put, delete}, Router, middleware};
-use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin, review, payments, webhook};
+use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin, review, payments, webhook, wishlist};
 use crate::middleware::auth::auth_middleware;
 use super::state::AppState;
 
@@ -23,6 +23,13 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/reviews/user/{product_id}", get(review::check_user_review))
         .route("/api/reviews/{review_id}/helpful", post(review::mark_review_helpful))
         .route("/api/reviews/{review_id}/replies", post(review::add_reply_to_review))
+        .route("/api/reviews/user-votes", post(review::get_user_review_votes))
+        // Wishlist routes
+        .route("/api/wishlist", get(wishlist::get_wishlist))
+        .route("/api/wishlist", post(wishlist::add_to_wishlist))
+        .route("/api/wishlist/{product_id}", delete(wishlist::remove_from_wishlist))
+        .route("/api/wishlist/check/{product_id}", get(wishlist::check_in_wishlist))
+        .route("/api/wishlist/count", get(wishlist::get_wishlist_count))
         // Admin routes (protected)
         .route("/api/admin/stats", get(admin::get_stats))
         .route("/api/admin/vendor/applications", get(admin::get_vendor_applications))
@@ -44,8 +51,7 @@ pub fn create_router(state: AppState) -> Router {
         
         // Payment routes
         .route("/api/payments/initiate", post(payments::initiate_payment))
-        .route("/api/payments/crypto/status/:charge_id", get(payments::get_crypto_status));
-        
+        .route("/api/payments/crypto/status/{charge_id}", get(payments::get_crypto_status));
         
     let admin_routes = Router::new()
         .route("/api/admin/shipping/settings", get(admin::get_shipping_settings).put(admin::update_shipping_settings))
@@ -74,7 +80,6 @@ pub fn create_router(state: AppState) -> Router {
         // Webhook routes
         .route("/api/webhook/stripe", post(webhook::stripe_webhook))
         .route("/api/webhook/coinbase", post(webhook::coinbase_webhook))
-
 
         .merge(protected_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
         .merge(admin_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))

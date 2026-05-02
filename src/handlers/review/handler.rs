@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use axum::{
     extract::{State, Path, Query, Extension},
     Json,
@@ -88,6 +89,7 @@ pub async fn check_user_review(
 
 pub async fn mark_review_helpful(
     State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
     Path(review_id): Path<Uuid>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -98,6 +100,7 @@ pub async fn mark_review_helpful(
     ReviewService::mark_helpful(
         state.get_db_pool(),
         &review_id,
+        &auth_user.user_id,
         is_helpful,
     ).await?;
     
@@ -142,5 +145,34 @@ pub async fn get_review_replies(
     Ok(Json(serde_json::json!({
         "success": true,
         "data": replies
+    })))
+}
+
+pub async fn get_user_review_votes(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Json(req): Json<Vec<Uuid>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let mut result = HashMap::new();
+    for review_id in req {
+        let row = sqlx::query!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM review_helpfulness 
+                WHERE review_id = $1 AND user_id = $2
+            ) as "exists!"
+            "#,
+            review_id,
+            auth_user.user_id
+        )
+        .fetch_one(state.get_db_pool())
+        .await
+        .map_err(|_| AppError::bad_request("Failed to check votes"))?;
+        
+        result.insert(review_id, row.exists);
+    }
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "data": result
     })))
 }

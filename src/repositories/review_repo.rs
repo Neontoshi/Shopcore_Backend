@@ -78,35 +78,66 @@ impl ReviewRepository {
     }
     
     pub async fn mark_helpful(
-        pool: &PgPool,
-        review_id: &Uuid,
-        is_helpful: bool,
-    ) -> Result<(), AppError> {
-        if is_helpful {
-            sqlx::query!(
-                r#"
-                UPDATE reviews SET helpful_count = helpful_count + 1, updated_at = NOW()
-                WHERE id = $1
-                "#,
-                review_id
-            )
-            .execute(pool)
-            .await?;
-        } else {
-            sqlx::query!(
-                r#"
-                UPDATE reviews SET unhelpful_count = unhelpful_count + 1, updated_at = NOW()
-                WHERE id = $1
-                "#,
-                review_id
-            )
-            .execute(pool)
-            .await?;
-        }
-        
-        Ok(())
+    pool: &PgPool,
+    review_id: &Uuid,
+    user_id: &Uuid,
+    is_helpful: bool,
+) -> Result<(), AppError> {
+    // First, check if user already voted
+    let existing = sqlx::query!(
+        r#"
+        SELECT id FROM review_helpfulness 
+        WHERE review_id = $1 AND user_id = $2
+        "#,
+        review_id,
+        user_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if existing.is_some() {
+        return Err(AppError::bad_request("You have already voted on this review"));
+    }
+
+    // Insert the vote record
+    sqlx::query!(
+        r#"
+        INSERT INTO review_helpfulness (id, review_id, user_id, is_helpful)
+        VALUES ($1, $2, $3, $4)
+        "#,
+        Uuid::new_v4(),
+        review_id,
+        user_id,
+        is_helpful
+    )
+    .execute(pool)
+    .await?;
+
+    // Update the review counts
+    if is_helpful {
+        sqlx::query!(
+            r#"
+            UPDATE reviews SET helpful_count = helpful_count + 1, updated_at = NOW()
+            WHERE id = $1
+            "#,
+            review_id
+        )
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query!(
+            r#"
+            UPDATE reviews SET unhelpful_count = unhelpful_count + 1, updated_at = NOW()
+            WHERE id = $1
+            "#,
+            review_id
+        )
+        .execute(pool)
+        .await?;
     }
     
+    Ok(())
+}
     pub async fn add_reply(
         pool: &PgPool,
         review_id: &Uuid,

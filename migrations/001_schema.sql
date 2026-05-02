@@ -474,35 +474,6 @@ CREATE TRIGGER trigger_verify_review_purchase
     BEFORE INSERT ON reviews FOR EACH ROW
     EXECUTE FUNCTION mark_review_as_verified();
 
--- Update helpfulness counts
-CREATE OR REPLACE FUNCTION update_review_helpfulness()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        IF NEW.is_helpful THEN
-            UPDATE reviews SET helpful_count = helpful_count + 1, updated_at = NOW() WHERE id = NEW.review_id;
-        ELSE
-            UPDATE reviews SET unhelpful_count = unhelpful_count + 1, updated_at = NOW() WHERE id = NEW.review_id;
-        END IF;
-    ELSIF TG_OP = 'DELETE' THEN
-        IF OLD.is_helpful THEN
-            UPDATE reviews SET helpful_count = helpful_count - 1, updated_at = NOW() WHERE id = OLD.review_id;
-        ELSE
-            UPDATE reviews SET unhelpful_count = unhelpful_count - 1, updated_at = NOW() WHERE id = OLD.review_id;
-        END IF;
-    END IF;
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_update_helpfulness_on_insert
-    AFTER INSERT ON review_helpfulness FOR EACH ROW
-    EXECUTE FUNCTION update_review_helpfulness();
-
-CREATE TRIGGER trigger_update_helpfulness_on_delete
-    AFTER DELETE ON review_helpfulness FOR EACH ROW
-    EXECUTE FUNCTION update_review_helpfulness();
-
 -- Product rating summary function
 CREATE OR REPLACE FUNCTION get_product_rating_summary(p_product_id UUID)
 RETURNS TABLE(

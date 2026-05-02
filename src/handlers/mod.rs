@@ -10,3 +10,4 @@ pub mod vendor;
 pub mod review;
 pub mod payments;
 pub mod webhook;
+pub mod wishlist;

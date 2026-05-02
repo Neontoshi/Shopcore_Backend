@@ -18,23 +18,26 @@ pub async fn get_vendor_orders(
     let page = params.get("page").and_then(|p| p.as_u64()).unwrap_or(1);
     let page_size = params.get("page_size").and_then(|p| p.as_u64()).unwrap_or(20);
 
+    // Get distinct orders that contain this vendor's items
     let rows = sqlx::query!(
         r#"
-        SELECT DISTINCT
+        SELECT DISTINCT ON (o.id)
             o.id as order_id,
             o.order_number,
-            o.total,
             o.status,
             o.created_at,
             u.first_name,
             u.last_name,
-            u.email as customer_email
+            u.email as customer_email,
+            (
+                SELECT COALESCE(SUM(oi2.total), 0)
+                FROM order_items oi2
+                WHERE oi2.order_id = o.id AND oi2.vendor_id = $1
+            ) as vendor_total
         FROM orders o
-        JOIN order_items oi ON o.id = oi.order_id
-        JOIN products p ON oi.product_id = p.id
+        JOIN order_items oi ON o.id = oi.order_id AND oi.vendor_id = $1
         JOIN users u ON o.user_id = u.id
-        WHERE p.vendor_id = $1
-        ORDER BY o.created_at DESC
+        ORDER BY o.id, o.created_at DESC
         LIMIT $2 OFFSET $3
         "#,
         auth_user.user_id,
@@ -44,26 +47,49 @@ pub async fn get_vendor_orders(
     .fetch_all(state.get_db_pool())
     .await?;
 
-    let orders: Vec<serde_json::Value> = rows.into_iter().map(|row| {
-        serde_json::json!({
+    // For each order, fetch only this vendor's items
+    let mut orders: Vec<serde_json::Value> = Vec::new();
+    for row in rows {
+        let items = sqlx::query!(
+            r#"
+            SELECT product_name, quantity, price, total
+            FROM order_items
+            WHERE order_id = $1 AND vendor_id = $2
+            "#,
+            row.order_id,
+            auth_user.user_id
+        )
+        .fetch_all(state.get_db_pool())
+        .await?;
+
+        let items_json: Vec<serde_json::Value> = items.iter().map(|i| serde_json::json!({
+            "product_name": i.product_name,
+            "quantity": i.quantity,
+            "price": i.price,
+            "total": i.total,
+        })).collect();
+
+        orders.push(serde_json::json!({
             "order_id": row.order_id,
             "order_number": row.order_number,
-            "total": row.total,
+            "total": row.vendor_total,
             "status": row.status,
             "created_at": row.created_at,
-            "customer_name": format!("{} {}", row.first_name.unwrap_or_default(), row.last_name.unwrap_or_default()).trim(),
+            "customer_name": format!("{} {}", 
+                row.first_name.unwrap_or_default(), 
+                row.last_name.unwrap_or_default()
+            ).trim().to_string(),
             "customer_email": row.customer_email,
-            "items": []
-        })
-    }).collect();
+            "items": items_json
+        }));
+    }
 
     let total = sqlx::query!(
         r#"
         SELECT COUNT(DISTINCT o.id) as count
         FROM orders o
         JOIN order_items oi ON o.id = oi.order_id
-        JOIN products p ON oi.product_id = p.id
-        WHERE p.vendor_id = $1
+        WHERE oi.vendor_id = $1
         "#,
         auth_user.user_id
     )
@@ -79,7 +105,6 @@ pub async fn get_vendor_orders(
         "page_size": page_size
     })))
 }
-
 pub async fn update_order_status(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,

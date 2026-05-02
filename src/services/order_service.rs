@@ -96,25 +96,25 @@ impl OrderService {
 
         let mut order_items = Vec::new();
 
-        for item in &cart_items {
-            let product = ProductRepository::find_by_id_tx(&mut *tx, &item.product_id).await?
-                .unwrap();
+       for item in &cart_items {
+    let product = ProductRepository::find_by_id_tx(&mut *tx, &item.product_id).await?
+        .unwrap();
 
-            order_items.push((
-                item.product_id,
-                item.quantity,
-                item.price,
-                product.name.clone(),
-                product.sku,
-            ));
+    order_items.push((
+        item.product_id,
+        item.quantity,
+        item.price,
+        product.name.clone(),
+        product.sku,
+        product.vendor_id, // ADD THIS
+    ));
 
-            ProductRepository::update_stock(
-                &mut *tx,
-                &item.product_id,
-                -item.quantity,
-            ).await?;
-        }
-
+    ProductRepository::update_stock(
+        &mut *tx,
+        &item.product_id,
+        -item.quantity,
+    ).await?;
+}
         OrderRepository::add_order_items(&mut *tx, &order.id, order_items).await?;
         CartRepository::clear_cart(&mut *tx, &cart.id).await?;
 

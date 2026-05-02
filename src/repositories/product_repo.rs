@@ -50,6 +50,7 @@ impl ProductRepository {
                 weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
+                vendor_id,
                 created_at, updated_at
             FROM products
             WHERE id = $1
@@ -73,6 +74,7 @@ impl ProductRepository {
                 weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
+                vendor_id,
                 created_at, updated_at
             FROM products
             WHERE slug = $1
@@ -134,7 +136,7 @@ impl ProductRepository {
         let mut sql = String::from(
             "SELECT id, name, slug, description, price, compare_at_price, weight, \
              stock_quantity, category_id, sku, is_active, image_url, \
-             average_rating, total_reviews, created_at, updated_at \
+             average_rating, total_reviews, vendor_id, created_at, updated_at \
              FROM products WHERE 1=1"
         );
         
@@ -216,6 +218,7 @@ impl ProductRepository {
                 weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
+                vendor_id,
                 created_at, updated_at
             FROM products
             ORDER BY created_at DESC
@@ -260,6 +263,7 @@ impl ProductRepository {
                 weight,
                 average_rating as "average_rating: Decimal",
                 total_reviews,
+                vendor_id,
                 created_at, updated_at
             FROM products
             WHERE id = $1
