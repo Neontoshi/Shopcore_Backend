@@ -66,8 +66,8 @@ pub async fn get_pending_applications(
         return Err(AppError::forbidden("Admin access required"));
     }
 
-    let page: i64 = params.page.unwrap_or(1).try_into().map_err(|_| AppError::bad_request("Invalid page number"))?;
-    let page_size: i64 = params.page_size.unwrap_or(20).try_into().map_err(|_| AppError::bad_request("Invalid page size"))?;
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(20).max(1);
 
     let (applications, _total) = VendorService::get_pending_applications(
         state.get_db_pool(),

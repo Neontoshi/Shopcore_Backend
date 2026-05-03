@@ -48,8 +48,8 @@ pub async fn get_my_orders(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<Vec<OrderResponse>>, AppError> {
-    let page = params.page.unwrap_or(1);
-    let page_size = params.page_size.unwrap_or(20);
+    let page = params.page.unwrap_or(1).max(1) as usize;
+    let page_size = params.page_size.unwrap_or(20).max(1) as usize;
 
     let (orders, _total) = OrderService::get_user_orders(
         state.get_db_pool(),

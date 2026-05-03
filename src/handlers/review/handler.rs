@@ -5,18 +5,12 @@ use axum::{
 };
 use uuid::Uuid;
 use validator::Validate;
-use serde::Deserialize;
 use crate::app::state::AppState;
 use crate::dtos::review_dto::{CreateReviewRequest, CreateReplyRequest};
 use crate::services::review_service::ReviewService;
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
-
-#[derive(Debug, Deserialize)]
-pub struct PaginationParams {
-    pub page: Option<i64>,
-    pub page_size: Option<i64>,
-}
+use crate::types::PaginationParams;
 
 pub async fn create_review(
     State(state): State<AppState>,
@@ -26,13 +20,13 @@ pub async fn create_review(
     if let Err(errors) = req.validate() {
         return Err(AppError::validation(errors.to_string()));
     }
-    
+
     let review = ReviewService::create_review(
         state.get_db_pool(),
         &auth_user.user_id,
         req,
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "data": review
@@ -44,16 +38,16 @@ pub async fn get_product_reviews(
     Path(product_id): Path<Uuid>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let page = params.page.unwrap_or(1);
-    let page_size = params.page_size.unwrap_or(10).min(50);
-    
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(10).min(50).max(1);
+
     let (reviews, total, summary) = ReviewService::get_product_reviews(
         state.get_db_pool(),
         &product_id,
         page,
         page_size,
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "data": reviews,
@@ -81,7 +75,7 @@ pub async fn check_user_review(
     )
     .fetch_one(state.get_db_pool())
     .await?;
-    
+
     Ok(Json(serde_json::json!({
         "has_reviewed": result.has_reviewed.unwrap_or(false)
     })))
@@ -96,14 +90,14 @@ pub async fn mark_review_helpful(
     let is_helpful = req.get("is_helpful").and_then(|v| v.as_bool()).ok_or_else(|| {
         AppError::bad_request("is_helpful is required")
     })?;
-    
+
     ReviewService::mark_helpful(
         state.get_db_pool(),
         &review_id,
         &auth_user.user_id,
         is_helpful,
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "message": "Thank you for your feedback"
@@ -119,14 +113,14 @@ pub async fn add_reply_to_review(
     if let Err(errors) = req.validate() {
         return Err(AppError::validation(errors.to_string()));
     }
-    
+
     let reply = ReviewService::add_reply(
         state.get_db_pool(),
         &review_id,
         &auth_user.user_id,
         &req.reply,
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "data": reply
@@ -141,7 +135,7 @@ pub async fn get_review_replies(
         state.get_db_pool(),
         &review_id,
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "success": true,
         "data": replies
@@ -168,9 +162,10 @@ pub async fn get_user_review_votes(
         .fetch_one(state.get_db_pool())
         .await
         .map_err(|_| AppError::bad_request("Failed to check votes"))?;
-        
+
         result.insert(review_id, row.exists);
     }
+
     Ok(Json(serde_json::json!({
         "success": true,
         "data": result
