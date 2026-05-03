@@ -12,7 +12,7 @@ pub async fn get_stats(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -66,7 +66,7 @@ pub async fn get_vendor_applications(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -114,13 +114,12 @@ pub async fn review_application(
     Path(application_id): Path<Uuid>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
     let status = req.get("status").and_then(|s| s.as_str()).ok_or_else(|| AppError::bad_request("Status is required"))?;
 
-    // Get the application to find the user_id and application details
     let application = sqlx::query!(
         r#"
         SELECT 
@@ -135,10 +134,8 @@ pub async fn review_application(
     .await?
     .ok_or_else(|| AppError::not_found("Application"))?;
 
-    // Start a transaction
     let mut tx = state.get_db_pool().begin().await?;
 
-    // Update application status
     sqlx::query!(
         r#"
         UPDATE vendor_applications
@@ -152,9 +149,7 @@ pub async fn review_application(
     .execute(&mut *tx)
     .await?;
 
-    // If approved, update user role to vendor AND create vendor profile
     if status == "approved" {
-        // Update user role
         sqlx::query!(
             r#"
             UPDATE users SET role = 'vendor', updated_at = NOW()
@@ -164,8 +159,7 @@ pub async fn review_application(
         )
         .execute(&mut *tx)
         .await?;
-        
-        // Create vendor profile from application data
+
         sqlx::query!(
             r#"
             INSERT INTO vendor_profiles (
@@ -188,19 +182,19 @@ pub async fn review_application(
         .await?;
     }
 
-    // Commit transaction
     tx.commit().await?;
 
     Ok(Json(serde_json::json!({
         "message": format!("Application {} successfully", status)
     })))
 }
+
 // Admin: Get all users
 pub async fn get_users(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -236,7 +230,7 @@ pub async fn update_user_status(
     Path(user_id): Path<Uuid>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -263,7 +257,7 @@ pub async fn get_all_products(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -302,7 +296,7 @@ pub async fn get_all_orders(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -343,7 +337,7 @@ pub async fn mark_order_paid(
     Extension(auth_user): Extension<AuthUser>,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -386,15 +380,15 @@ pub async fn get_inventory(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<crate::dtos::InventoryFilter>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
-    
+
     let page = params.page.unwrap_or(1);
     let page_size = params.page_size.unwrap_or(20);
     let low_stock_only = params.low_stock_only.unwrap_or(false);
     let out_of_stock_only = params.out_of_stock_only.unwrap_or(false);
-    
+
     let (inventory, total) = crate::services::InventoryService::get_inventory(
         state.get_db_pool(),
         params.vendor_id,
@@ -404,7 +398,7 @@ pub async fn get_inventory(
         page,
         page_size,
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "items": inventory,
         "total": total,
@@ -415,42 +409,42 @@ pub async fn get_inventory(
 }
 
 // Admin: Manual stock adjustment
-// Admin: Manual stock adjustment
 pub async fn manual_adjust_stock(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<crate::dtos::ManualStockAdjustRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
-    
+
     crate::services::InventoryService::manual_adjust_stock(
         state.get_db_pool(),
         req,
         &auth_user.user_id,
-        &state.get_email_service(),  // Pass the email service
+        &state.get_email_service(),
     ).await?;
-    
+
     Ok(Json(serde_json::json!({
         "message": "Stock adjusted successfully"
     })))
 }
+
 // Admin: Get low stock summary for dashboard widget
 pub async fn get_low_stock_summary(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
-    
+
     let low_stock_products = crate::services::AlertService::get_low_stock_summary(
         state.get_db_pool(),
     ).await?;
-    
+
     let low_stock_count = low_stock_products.len();
-    
+
     Ok(Json(serde_json::json!({
         "count": low_stock_count,
         "products": low_stock_products

@@ -7,12 +7,14 @@ use axum::{
 use crate::app::state::AppState;
 use crate::utils::JwtService;
 use crate::errors::AppError;
+use crate::constants::roles::UserRole;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub user_id: uuid::Uuid,
     pub email: String,
-    pub role: String,
+    pub role: UserRole,
 }
 
 pub async fn auth_middleware(
@@ -41,10 +43,15 @@ pub async fn auth_middleware(
         Err(_) => return AppError::unauthorized("Invalid user ID").into_response(),
     };
 
+    let role = match UserRole::from_str(&claims.claims.role) {
+        Ok(r) => r,
+        Err(_) => return AppError::unauthorized("Invalid user role").into_response(),
+    };
+
     let auth_user = AuthUser {
         user_id,
         email: claims.claims.email,
-        role: claims.claims.role,
+        role,
     };
 
     request.extensions_mut().insert(auth_user);

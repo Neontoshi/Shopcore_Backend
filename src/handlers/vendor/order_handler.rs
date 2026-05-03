@@ -11,14 +11,13 @@ pub async fn get_vendor_orders(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "vendor" && auth_user.role != "admin" {
+    if !auth_user.role.can_manage_products() {
         return Err(AppError::forbidden("Only vendors can access this endpoint"));
     }
 
     let page = params.get("page").and_then(|p| p.as_u64()).unwrap_or(1);
     let page_size = params.get("page_size").and_then(|p| p.as_u64()).unwrap_or(20);
 
-    // Get distinct orders that contain this vendor's items
     let rows = sqlx::query!(
         r#"
         SELECT DISTINCT ON (o.id)
@@ -47,7 +46,6 @@ pub async fn get_vendor_orders(
     .fetch_all(state.get_db_pool())
     .await?;
 
-    // For each order, fetch only this vendor's items
     let mut orders: Vec<serde_json::Value> = Vec::new();
     for row in rows {
         let items = sqlx::query!(
@@ -75,8 +73,8 @@ pub async fn get_vendor_orders(
             "total": row.vendor_total,
             "status": row.status,
             "created_at": row.created_at,
-            "customer_name": format!("{} {}", 
-                row.first_name.unwrap_or_default(), 
+            "customer_name": format!("{} {}",
+                row.first_name.unwrap_or_default(),
                 row.last_name.unwrap_or_default()
             ).trim().to_string(),
             "customer_email": row.customer_email,
@@ -105,19 +103,19 @@ pub async fn get_vendor_orders(
         "page_size": page_size
     })))
 }
+
 pub async fn update_order_status(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     axum::extract::Path(order_id): axum::extract::Path<uuid::Uuid>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "vendor" && auth_user.role != "admin" {
+    if !auth_user.role.can_manage_products() {
         return Err(AppError::forbidden("Only vendors can update order status"));
     }
 
     let status = req.get("status").and_then(|s| s.as_str()).ok_or_else(|| AppError::bad_request("Status is required"))?;
 
-    // Verify order contains vendor's products
     let has_vendor_products = sqlx::query!(
         r#"
         SELECT COUNT(*) as count
@@ -133,7 +131,7 @@ pub async fn update_order_status(
     .count
     .unwrap_or(0) > 0;
 
-    if !has_vendor_products && auth_user.role != "admin" {
+    if !has_vendor_products && !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("You don't have permission to update this order"));
     }
 

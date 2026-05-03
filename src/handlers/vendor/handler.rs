@@ -62,7 +62,7 @@ pub async fn get_pending_applications(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<Vec<VendorApplicationResponse>>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -85,7 +85,7 @@ pub async fn review_application(
     Path(application_id): Path<Uuid>,
     Json(req): Json<ReviewVendorApplicationRequest>,
 ) -> Result<Json<VendorApplicationResponse>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -94,7 +94,7 @@ pub async fn review_application(
     }
 
     let status = req.status.ok_or_else(|| AppError::bad_request("Status is required"))?;
-    
+
     if status != "approved" && status != "rejected" {
         return Err(AppError::bad_request("Status must be 'approved' or 'rejected'"));
     }

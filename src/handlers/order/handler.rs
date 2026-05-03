@@ -32,13 +32,14 @@ pub async fn get_order(
     Extension(auth_user): Extension<AuthUser>,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<OrderResponse>, AppError> {
-    let is_admin = auth_user.role == "admin";
+    let is_admin = auth_user.role.can_access_admin();
     let order = OrderService::get_order(
         state.get_db_pool(),
         &auth_user.user_id,
         &order_id,
         is_admin,
     ).await?;
+
     Ok(Json(order))
 }
 
@@ -66,7 +67,7 @@ pub async fn update_order_status(
     Path(order_id): Path<Uuid>,
     Json(req): Json<UpdateOrderStatusRequest>,
 ) -> Result<Json<crate::utils::MessageResponse>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 
@@ -74,13 +75,14 @@ pub async fn update_order_status(
 
     Ok(Json(crate::utils::MessageResponse::new("Order status updated successfully")))
 }
+
 pub async fn cancel_order(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<crate::utils::MessageResponse>, AppError> {
-    let is_admin = auth_user.role == "admin";
-    
+    let is_admin = auth_user.role.can_access_admin();
+
     OrderService::cancel_order_with_stock_restore(
         state.get_db_pool(),
         &order_id,

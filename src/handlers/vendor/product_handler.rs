@@ -14,7 +14,7 @@ pub async fn get_my_products(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "vendor" && auth_user.role != "admin" {
+    if !auth_user.role.can_manage_products() {
         return Err(AppError::forbidden("Only vendors can access this endpoint"));
     }
 
@@ -85,7 +85,7 @@ pub async fn create_product(
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<CreateProductRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "vendor" && auth_user.role != "admin" {
+    if !auth_user.role.can_manage_products() {
         return Err(AppError::forbidden("Only vendors can create products"));
     }
 
@@ -156,7 +156,7 @@ pub async fn update_product(
     .await?
     .ok_or_else(|| AppError::not_found("Product"))?;
 
-    if existing.vendor_id != Some(auth_user.user_id) && auth_user.role != "admin" {
+    if existing.vendor_id != Some(auth_user.user_id) && !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("You don't have permission to update this product"));
     }
 
@@ -233,7 +233,7 @@ pub async fn delete_product(
     .await?
     .ok_or_else(|| AppError::not_found("Product"))?;
 
-    if existing.vendor_id != Some(auth_user.user_id) && auth_user.role != "admin" {
+    if existing.vendor_id != Some(auth_user.user_id) && !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("You don't have permission to delete this product"));
     }
 

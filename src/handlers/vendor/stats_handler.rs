@@ -11,11 +11,10 @@ pub async fn get_vendor_stats(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "vendor" && auth_user.role != "admin" {
+    if !auth_user.role.can_manage_products() {
         return Err(AppError::forbidden("Only vendors can access this endpoint"));
     }
 
-    // Get total products
     let total_products = sqlx::query!(
         r#"SELECT COUNT(*) as count FROM products WHERE vendor_id = $1"#,
         auth_user.user_id
@@ -25,7 +24,6 @@ pub async fn get_vendor_stats(
     .count
     .unwrap_or(0);
 
-    // Get total orders and revenue
     let orders_data = sqlx::query!(
         r#"
         SELECT 
@@ -44,7 +42,6 @@ pub async fn get_vendor_stats(
     let total_orders = orders_data.order_count.unwrap_or(0);
     let total_revenue = orders_data.total_revenue.unwrap_or(Decimal::ZERO);
 
-    // Get pending orders
     let pending_orders = sqlx::query!(
         r#"
         SELECT COUNT(DISTINCT o.id) as count
@@ -60,7 +57,6 @@ pub async fn get_vendor_stats(
     .count
     .unwrap_or(0);
 
-    // Get low stock products
     let low_stock = sqlx::query!(
         r#"
         SELECT COUNT(*) as count

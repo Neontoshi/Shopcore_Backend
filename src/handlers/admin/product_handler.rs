@@ -14,7 +14,7 @@ pub async fn update_product_status(
     Path(product_id): Path<Uuid>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
 

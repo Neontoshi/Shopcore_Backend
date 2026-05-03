@@ -11,8 +11,7 @@ pub async fn get_profile(
     axum::Extension(auth_user): axum::Extension<AuthUser>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<ProfileResponse>, AppError> {
-    // Users can only view their own profile unless admin
-    if auth_user.user_id != user_id && auth_user.role != "admin" {
+    if auth_user.user_id != user_id && !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Access denied"));
     }
 
@@ -26,7 +25,7 @@ pub async fn update_profile(
     Path(user_id): Path<Uuid>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> Result<Json<ProfileResponse>, AppError> {
-    if auth_user.user_id != user_id && auth_user.role != "admin" {
+    if auth_user.user_id != user_id && !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Access denied"));
     }
 

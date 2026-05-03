@@ -21,7 +21,7 @@ pub async fn get_shipping_settings(
     )
     .fetch_one(state.get_db_pool())
     .await?;
-    
+
     Ok(Json(ShippingSettingsResponse {
         rate_per_kg: settings.rate_per_kg,
         free_shipping_threshold: settings.free_shipping_threshold,
@@ -34,10 +34,10 @@ pub async fn update_shipping_settings(
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<UpdateShippingSettingsRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if auth_user.role != "admin" {
+    if !auth_user.role.can_access_admin() {
         return Err(AppError::forbidden("Admin access required"));
     }
-    
+
     let current = sqlx::query!(
         r#"
         SELECT rate_per_kg, free_shipping_threshold
@@ -49,11 +49,10 @@ pub async fn update_shipping_settings(
     )
     .fetch_one(state.get_db_pool())
     .await?;
-    
+
     let new_rate = req.rate_per_kg.unwrap_or(current.rate_per_kg);
     let new_threshold = req.free_shipping_threshold.unwrap_or(current.free_shipping_threshold);
-    
-    // Insert new settings (keeping history)
+
     sqlx::query!(
         r#"
         INSERT INTO shipping_settings (rate_per_kg, free_shipping_threshold, updated_by)
@@ -65,8 +64,7 @@ pub async fn update_shipping_settings(
     )
     .execute(state.get_db_pool())
     .await?;
-    
-    // Deactivate old settings
+
     sqlx::query!(
         r#"
         UPDATE shipping_settings 
@@ -81,7 +79,7 @@ pub async fn update_shipping_settings(
     )
     .execute(state.get_db_pool())
     .await?;
-    
+
     Ok(Json(serde_json::json!({
         "message": "Shipping settings updated successfully",
         "rate_per_kg": new_rate,
