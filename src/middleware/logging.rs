@@ -1,9 +1,9 @@
 use axum::{
     middleware::Next,
     response::Response,
-    http::HeaderMap,
+    http::{HeaderMap, HeaderValue},
+    extract::Request,
 };
-use axum::extract::Request;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -15,10 +15,23 @@ pub async fn logging_middleware(
     let method = request.method().clone();
     let uri = request.uri().clone();
     let request_id = Uuid::new_v4().to_string();
-    let user_agent = extract_header(request.headers(), "user-agent");
-    let client_ip = extract_header(request.headers(), "x-forwarded-for")
-        .or_else(|| extract_header(request.headers(), "x-real-ip"))
+    
+    // Get client IP from various headers
+    let client_ip = request.headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .or_else(|| request.headers()
+            .get("x-real-ip")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()))
+        .or_else(|| request.headers()
+            .get("cf-connecting-ip") // Cloudflare
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()))
         .unwrap_or_else(|| "unknown".to_string());
+    
+    let user_agent = extract_header(request.headers(), "user-agent");
 
     tracing::info!(
         request_id = %request_id,
@@ -29,10 +42,16 @@ pub async fn logging_middleware(
         "incoming request"
     );
 
-    let response = next.run(request).await;
+    let mut response = next.run(request).await;
 
     let duration = start.elapsed();
     let status = response.status();
+
+    // Add request_id to response headers
+    response.headers_mut().insert(
+        "x-request-id",
+        HeaderValue::from_str(&request_id).unwrap_or_else(|_| HeaderValue::from_static("error")),
+    );
 
     tracing::info!(
         request_id = %request_id,
