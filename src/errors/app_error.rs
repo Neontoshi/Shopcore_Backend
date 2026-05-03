@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use thiserror::Error;
-use serde_json::json;
+use crate::errors::ErrorResponse;
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -28,7 +28,7 @@ pub enum AppError {
     #[error("{0}")]
     PaymentError(String),
     #[error("Too many requests")]
-    RateLimit,  // ADD THIS
+    RateLimit,
 }
 
 impl From<anyhow::Error> for AppError {
@@ -43,30 +43,66 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
+impl From<redis::RedisError> for AppError {
+    fn from(e: redis::RedisError) -> Self {
+        tracing::error!("Redis error: {}", e);
+        AppError::InternalServerError
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
-            AppError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database error. Please try again later.".to_string()),
-            AppError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
-            AppError::InternalServerError => (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong. Please try again.".to_string()),
-            AppError::EmailError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::PaymentError(msg) => (StatusCode::PAYMENT_REQUIRED, msg),
-            AppError::RateLimit => (StatusCode::TOO_MANY_REQUESTS, "Too many requests. Please slow down and try again later.".to_string()),  // ADD THIS
+        let response = match self {
+            AppError::Database(ref e) => {
+                tracing::error!("Database error: {}", e);
+                ErrorResponse::new(
+                    "Database error. Please try again later.",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "DATABASE_ERROR",
+                )
+            }
+            AppError::Validation(msg) => {
+                ErrorResponse::new(msg, StatusCode::BAD_REQUEST, "VALIDATION_ERROR")
+            }
+            AppError::NotFound(msg) => {
+                ErrorResponse::new(msg, StatusCode::NOT_FOUND, "NOT_FOUND")
+            }
+            AppError::Unauthorized(msg) => {
+                ErrorResponse::new(msg, StatusCode::UNAUTHORIZED, "UNAUTHORIZED")
+            }
+            AppError::Forbidden(msg) => {
+                ErrorResponse::new(msg, StatusCode::FORBIDDEN, "FORBIDDEN")
+            }
+            AppError::BadRequest(msg) => {
+                ErrorResponse::new(msg, StatusCode::BAD_REQUEST, "BAD_REQUEST")
+            }
+            AppError::Conflict(msg) => {
+                ErrorResponse::new(msg, StatusCode::CONFLICT, "CONFLICT")
+            }
+            AppError::InternalServerError => {
+                ErrorResponse::new(
+                    "Something went wrong. Please try again.",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_SERVER_ERROR",
+                )
+            }
+            AppError::EmailError(msg) => {
+                tracing::error!("Email error: {}", msg);
+                ErrorResponse::new(msg, StatusCode::INTERNAL_SERVER_ERROR, "EMAIL_ERROR")
+            }
+            AppError::PaymentError(msg) => {
+                ErrorResponse::new(msg, StatusCode::PAYMENT_REQUIRED, "PAYMENT_ERROR")
+            }
+            AppError::RateLimit => {
+                ErrorResponse::new(
+                    "Too many requests. Please slow down and try again later.",
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "RATE_LIMIT_EXCEEDED",
+                )
+            }
         };
 
-        let body = json!({
-            "error": {
-                "message": message,
-                "status_code": status.as_u16(),
-            }
-        });
-
-        (status, axum::Json(body)).into_response()
+        response.into_response()
     }
 }
 
@@ -98,7 +134,7 @@ impl AppError {
     pub fn payment_error(message: impl Into<String>) -> Self {
         AppError::PaymentError(message.into())
     }
-    pub fn rate_limit() -> Self {  // ADD THIS METHOD
+    pub fn rate_limit() -> Self {
         AppError::RateLimit
     }
 }

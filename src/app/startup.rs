@@ -26,11 +26,11 @@ pub async fn start_server(config: AppConfig, db_pool: PgPool) -> anyhow::Result<
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(86400));
         loop {
             interval.tick().await;
-            println!("Running daily low stock check...");
+           //  println!("Running daily low stock check...");
             if let Err(e) = AlertService::check_all_low_stock_products(&pool, &email_service).await {
                 eprintln!("❌ Failed to send daily low stock alerts: {}", e);
             } else {
-                println!("Daily low stock check completed");
+               //  println!("Daily low stock check completed");
             }
         }
     });
