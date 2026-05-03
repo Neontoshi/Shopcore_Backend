@@ -26,6 +26,8 @@ pub struct AppConfig {
     pub smtp_password: String,
     pub smtp_from: String,
     
+    pub admin_email: String,  // ADD THIS
+    
     pub rate_limit_requests: u32,
     pub rate_limit_duration_seconds: u64,
     
@@ -67,6 +69,9 @@ impl AppConfig {
                 .context("SMTP_PASSWORD must be set")?,
             smtp_from: std::env::var("SMTP_FROM")
                 .context("SMTP_FROM must be set")?,
+            
+            admin_email: std::env::var("ADMIN_EMAIL")
+                .unwrap_or_else(|_| "daisisamuel23@gmail.com".to_string()),  // ADD THIS
             jwt_secret: std::env::var("JWT_SECRET")
                 .context("JWT_SECRET must be set")?,
             jwt_expiration_hours: std::env::var("JWT_EXPIRATION_HOURS")

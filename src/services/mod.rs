@@ -10,6 +10,7 @@ pub mod review_service;
 pub mod payment_service;
 pub mod shipping_service;
 pub mod inventory_service;
+pub mod alert_service;
 
 pub use auth_service::AuthService;
 pub use product_service::ProductService;
@@ -23,4 +24,4 @@ pub use vendor_service::VendorService;
 pub use payment_service::PaymentService;
 pub use shipping_service::ShippingService;
 pub use inventory_service::InventoryService;
-
+pub use alert_service::AlertService;

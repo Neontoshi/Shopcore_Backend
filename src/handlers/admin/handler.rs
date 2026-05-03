@@ -389,6 +389,7 @@ pub async fn get_inventory(
 }
 
 // Admin: Manual stock adjustment
+// Admin: Manual stock adjustment
 pub async fn manual_adjust_stock(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -402,9 +403,30 @@ pub async fn manual_adjust_stock(
         state.get_db_pool(),
         req,
         &auth_user.user_id,
+        &state.get_email_service(),  // Pass the email service
     ).await?;
     
     Ok(Json(serde_json::json!({
         "message": "Stock adjusted successfully"
+    })))
+}
+// Admin: Get low stock summary for dashboard widget
+pub async fn get_low_stock_summary(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if auth_user.role != "admin" {
+        return Err(AppError::forbidden("Admin access required"));
+    }
+    
+    let low_stock_products = crate::services::AlertService::get_low_stock_summary(
+        state.get_db_pool(),
+    ).await?;
+    
+    let low_stock_count = low_stock_products.len();
+    
+    Ok(Json(serde_json::json!({
+        "count": low_stock_count,
+        "products": low_stock_products
     })))
 }

@@ -3,6 +3,8 @@ use uuid::Uuid;
 use crate::errors::AppError;
 use crate::repositories::ProductRepository;
 use crate::dtos::{InventoryItemResponse, ManualStockAdjustRequest};
+use crate::services::AlertService;
+use crate::services::EmailService;
 
 pub struct InventoryService;
 
@@ -68,6 +70,7 @@ impl InventoryService {
         pool: &PgPool,
         req: ManualStockAdjustRequest,
         admin_user_id: &Uuid,
+        email_service: &EmailService,
     ) -> Result<(), AppError> {
         let mut tx = pool.begin().await?;
         
@@ -101,6 +104,18 @@ impl InventoryService {
         ).await?;
         
         tx.commit().await?;
+        
+        // Trigger low stock alert check AFTER committing
+        let pool_clone = pool.clone();
+        let email_service_clone = email_service.clone();
+        let product_id_clone = req.product_id;
+        
+        tokio::spawn(async move {
+            // This will check and send email if stock is low
+            if let Err(e) = AlertService::trigger_low_stock_check(&pool_clone, &email_service_clone, &product_id_clone).await {
+                eprintln!("Failed to trigger low stock alert: {}", e);
+            }
+        });
         
         Ok(())
     }

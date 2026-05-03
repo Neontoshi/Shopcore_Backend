@@ -9,6 +9,8 @@ use crate::models::{Order, OrderItem, Address};
 use std::collections::HashMap;
 use chrono::Datelike;
 
+
+#[derive(Clone)]  // Add this line
 pub struct EmailService {
     mailer: AsyncSmtpTransport<Tokio1Executor>,
     from_email: Mailbox,
@@ -38,6 +40,8 @@ impl EmailService {
         tera.add_raw_template("order_shipped", ORDER_SHIPPED_TEMPLATE)
             .map_err(|e| AppError::email_error(e.to_string()))?;
         tera.add_raw_template("password_reset", PASSWORD_RESET_TEMPLATE)
+            .map_err(|e| AppError::email_error(e.to_string()))?;
+        tera.add_raw_template("low_stock_alert", LOW_STOCK_ALERT_TEMPLATE)
             .map_err(|e| AppError::email_error(e.to_string()))?;
         
         Ok(Self {
@@ -133,6 +137,29 @@ impl EmailService {
             .map_err(|e| AppError::email_error(e.to_string()))?;
         
         self.send_email(to_email, "Password Reset Request", &html).await
+    }
+    
+    pub async fn send_low_stock_alert(
+        &self,
+        to_email: &str,
+        product_name: &str,
+        sku: Option<&str>,
+        stock_quantity: i32,
+        threshold: i32,
+        vendor_name: Option<&str>,
+    ) -> Result<(), AppError> {
+        let mut context = Context::new();
+        context.insert("product_name", product_name);
+        context.insert("sku", &sku.unwrap_or("N/A"));
+        context.insert("stock_quantity", &stock_quantity);
+        context.insert("threshold", &threshold);
+        context.insert("vendor_name", &vendor_name.unwrap_or("Unknown"));
+        context.insert("year", &chrono::Utc::now().year());
+        
+        let html = self.tera.render("low_stock_alert", &context)
+            .map_err(|e| AppError::email_error(e.to_string()))?;
+        
+        self.send_email(to_email, &format!("⚠️ Low Stock Alert: {}", product_name), &html).await
     }
     
     async fn send_email(&self, to_email: &str, subject: &str, html: &str) -> Result<(), AppError> {
@@ -318,6 +345,54 @@ const PASSWORD_RESET_TEMPLATE: &str = r#"
         </div>
         <div class="footer">
             <p>&copy; 2024 Shopcore. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+"#;
+
+const LOW_STOCK_ALERT_TEMPLATE: &str = r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #ef4444; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9fafb; }
+        .product-details { background: white; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .warning { background: #fee2e2; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ef4444; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #6b7280; }
+        .button { display: inline-block; padding: 10px 20px; background: #4f46e5; color: white; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚠️ Low Stock Alert</h1>
+        </div>
+        <div class="content">
+            <div class="warning">
+                <h2>Attention Required!</h2>
+                <p>A product has fallen below the low stock threshold and needs your attention.</p>
+            </div>
+            
+            <div class="product-details">
+                <h3>Product Details</h3>
+                <p><strong>Product:</strong> {{ product_name }}</p>
+                <p><strong>SKU:</strong> {{ sku }}</p>
+                <p><strong>Current Stock:</strong> <span style="color: #ef4444; font-weight: bold;">{{ stock_quantity }}</span></p>
+                <p><strong>Threshold:</strong> ≤ {{ threshold }}</p>
+                <p><strong>Vendor:</strong> {{ vendor_name }}</p>
+            </div>
+            
+            <p>Please restock this product as soon as possible to avoid losing sales.</p>
+            
+            <a href="https://shopcore.com/admin/inventory" class="button">View Inventory</a>
+        </div>
+        <div class="footer">
+            <p>This is an automated alert from Shopcore. Please review your inventory.</p>
+            <p>&copy; {{ year }} Shopcore. All rights reserved.</p>
         </div>
     </div>
 </body>
