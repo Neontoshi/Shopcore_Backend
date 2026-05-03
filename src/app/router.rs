@@ -55,7 +55,9 @@ pub fn create_router(state: AppState) -> Router {
         
     let admin_routes = Router::new()
         .route("/api/admin/shipping/settings", get(admin::get_shipping_settings).put(admin::update_shipping_settings))
-        .route("/api/admin/products/{product_id}/status", put(admin::update_product_status));
+        .route("/api/admin/products/{product_id}/status", put(admin::update_product_status))
+        .route("/api/admin/inventory", get(admin::get_inventory))  // NEW
+        .route("/api/admin/inventory/adjust", post(admin::manual_adjust_stock));  // NEW
 
     Router::new()
         .route("/health", get(health::health_check))

@@ -4,9 +4,8 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 use crate::models::{Order, OrderItem};
 use crate::constants::order_status::OrderStatus;
+use crate::errors::AppError;  // ADD THIS IMPORT
 use sqlx::postgres::PgConnection;
-
-
 
 pub struct OrderRepository;
 
@@ -61,35 +60,36 @@ impl OrderRepository {
         Ok(order)
     }
     
-pub async fn add_order_items(
-    executor: &mut PgConnection,
-    order_id: &Uuid,
-    items: Vec<(Uuid, i32, Decimal, String, Option<String>, Option<Uuid>)>, // added vendor_id
-) -> Result<()> {
-    for (product_id, quantity, price, product_name, sku, vendor_id) in items {
-        sqlx::query!(
-            r#"
-            INSERT INTO order_items (
-                id, order_id, product_id, quantity, price, total, 
-                product_name, product_sku, vendor_id
+    pub async fn add_order_items(
+        executor: &mut PgConnection,
+        order_id: &Uuid,
+        items: Vec<(Uuid, i32, Decimal, String, Option<String>, Option<Uuid>)>, // added vendor_id
+    ) -> Result<()> {
+        for (product_id, quantity, price, product_name, sku, vendor_id) in items {
+            sqlx::query!(
+                r#"
+                INSERT INTO order_items (
+                    id, order_id, product_id, quantity, price, total, 
+                    product_name, product_sku, vendor_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                "#,
+                Uuid::new_v4(),
+                order_id,
+                product_id,
+                quantity,
+                price,
+                price * Decimal::new(quantity as i64, 0),
+                product_name,
+                sku,
+                vendor_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            "#,
-            Uuid::new_v4(),
-            order_id,
-            product_id,
-            quantity,
-            price,
-            price * Decimal::new(quantity as i64, 0),
-            product_name,
-            sku,
-            vendor_id
-        )
-        .execute(&mut *executor)
-        .await?;
+            .execute(&mut *executor)
+            .await?;
+        }
+        Ok(())
     }
-    Ok(())
-}
+
     pub async fn find_by_id<'a, E>(
         executor: E,
         order_id: &Uuid,
@@ -246,5 +246,26 @@ pub async fn add_order_items(
         .await?;
         
         Ok(result.count.unwrap_or(0))
+    }
+
+    pub async fn get_order_items_with_quantities<'a, E>(
+        executor: E,
+        order_id: &Uuid,
+    ) -> Result<Vec<(Uuid, i32)>, AppError>
+    where
+        E: sqlx::Executor<'a, Database = sqlx::Postgres>,
+    {
+        let items = sqlx::query!(
+            r#"
+            SELECT product_id, quantity
+            FROM order_items
+            WHERE order_id = $1
+            "#,
+            order_id
+        )
+        .fetch_all(executor)
+        .await?;
+
+        Ok(items.into_iter().map(|item| (item.product_id, item.quantity)).collect())
     }
 }

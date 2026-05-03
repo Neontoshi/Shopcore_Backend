@@ -274,4 +274,140 @@ impl ProductRepository {
         .await?;
         Ok(product)
     }
+
+    pub async fn log_inventory_change<'a, E>(
+        executor: E,
+        product_id: &Uuid,
+        quantity_change: i32,
+        old_quantity: i32,
+        reason: &str,
+        reference_id: Option<Uuid>,
+        created_by: Option<Uuid>,
+    ) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'a, Database = sqlx::Postgres>,
+    {
+        sqlx::query!(
+            r#"
+            INSERT INTO inventory_logs (id, product_id, quantity_change, old_quantity, new_quantity, reason, reference_id, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "#,
+            Uuid::new_v4(),
+            product_id,
+            quantity_change,
+            old_quantity,
+            old_quantity + quantity_change,
+            reason,
+            reference_id,
+            created_by
+        )
+        .execute(executor)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_inventory_with_filters(
+        pool: &PgPool,
+        vendor_id: Option<Uuid>,
+        low_stock_only: bool,
+        out_of_stock_only: bool,
+        search: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<(Product, Option<String>)>, AppError> {
+        let mut sql = String::from(
+            "SELECT 
+                p.id, p.name, p.slug, p.description, 
+                p.price, 
+                p.compare_at_price, 
+                p.stock_quantity, p.category_id, p.sku, p.is_active, p.image_url,
+                p.weight,
+                p.average_rating,
+                p.total_reviews,
+                p.vendor_id,
+                p.created_at, p.updated_at
+            FROM products p
+            WHERE 1=1"
+        );
+
+        if let Some(vid) = vendor_id {
+            sql.push_str(&format!(" AND p.vendor_id = '{}'", vid));
+        }
+
+        if low_stock_only {
+            sql.push_str(" AND p.stock_quantity <= 5 AND p.stock_quantity > 0");
+        }
+
+        if out_of_stock_only {
+            sql.push_str(" AND p.stock_quantity = 0");
+        }
+
+        if let Some(search_term) = search {
+            sql.push_str(&format!(" AND p.name ILIKE '%{}%'", search_term));
+        }
+
+        sql.push_str(&format!(" ORDER BY p.stock_quantity ASC LIMIT {} OFFSET {}", limit, offset));
+
+        let products = sqlx::query_as::<_, Product>(&sql)
+            .fetch_all(pool)
+            .await?;
+        
+        let mut results = Vec::new();
+        for product in products {
+            let vendor_name: Option<String> = if let Some(vendor_id) = product.vendor_id {
+                let row = sqlx::query!(
+                    r#"
+                    SELECT COALESCE(vp.store_name, u.first_name || ' ' || u.last_name) as name
+                    FROM users u
+                    LEFT JOIN vendor_profiles vp ON u.id = vp.user_id
+                    WHERE u.id = $1
+                    "#,
+                    vendor_id
+                )
+                .fetch_optional(pool)
+                .await?;
+                row.and_then(|r| r.name)
+            } else {
+                None
+            };
+            results.push((product, vendor_name));
+        }
+
+        Ok(results)
+    }
+
+    pub async fn count_inventory_with_filters(
+        pool: &PgPool,
+        vendor_id: Option<Uuid>,
+        low_stock_only: bool,
+        out_of_stock_only: bool,
+        search: Option<&str>,
+    ) -> Result<i64, AppError> {
+        let mut sql = String::from(
+            "SELECT COUNT(*) as count FROM products p WHERE 1=1"
+        );
+
+        if let Some(vid) = vendor_id {
+            sql.push_str(&format!(" AND p.vendor_id = '{}'", vid));
+        }
+
+        if low_stock_only {
+            sql.push_str(" AND p.stock_quantity <= 5 AND p.stock_quantity > 0");
+        }
+
+        if out_of_stock_only {
+            sql.push_str(" AND p.stock_quantity = 0");
+        }
+
+        if let Some(search_term) = search {
+            sql.push_str(&format!(" AND p.name ILIKE '%{}%'", search_term));
+        }
+
+        let count: i64 = sqlx::query_scalar(&sql)
+            .fetch_one(pool)
+            .await?;
+
+        Ok(count)
+    }
 }

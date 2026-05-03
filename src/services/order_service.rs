@@ -3,6 +3,7 @@ use crate::repositories::{CartRepository, OrderRepository, AddressRepository, Pr
 use crate::services::shipping_service::ShippingService;
 use crate::dtos::{CheckoutResponse, OrderResponse, OrderItemResponse};
 use crate::errors::AppError;
+use crate::constants::order_status::OrderStatus;  // ADD THIS IMPORT
 use sqlx::PgPool;
 use uuid::Uuid;
 use rust_decimal::Decimal;
@@ -96,25 +97,26 @@ impl OrderService {
 
         let mut order_items = Vec::new();
 
-       for item in &cart_items {
-    let product = ProductRepository::find_by_id_tx(&mut *tx, &item.product_id).await?
-        .unwrap();
+        for item in &cart_items {
+            let product = ProductRepository::find_by_id_tx(&mut *tx, &item.product_id).await?
+                .unwrap();
 
-    order_items.push((
-        item.product_id,
-        item.quantity,
-        item.price,
-        product.name.clone(),
-        product.sku,
-        product.vendor_id, // ADD THIS
-    ));
+            order_items.push((
+                item.product_id,
+                item.quantity,
+                item.price,
+                product.name.clone(),
+                product.sku,
+                product.vendor_id,
+            ));
 
-    ProductRepository::update_stock(
-        &mut *tx,
-        &item.product_id,
-        -item.quantity,
-    ).await?;
-}
+            ProductRepository::update_stock(
+                &mut *tx,
+                &item.product_id,
+                -item.quantity,
+            ).await?;
+        }
+
         OrderRepository::add_order_items(&mut *tx, &order.id, order_items).await?;
         CartRepository::clear_cart(&mut *tx, &cart.id).await?;
 
@@ -130,6 +132,71 @@ impl OrderService {
             payment_url: None,
             message: "Order placed successfully".into(),
         })
+    }
+
+    pub async fn cancel_order_with_stock_restore(
+        pool: &PgPool,
+        order_id: &Uuid,
+        user_id: &Uuid,
+        is_admin: bool,
+    ) -> Result<(), AppError> {
+        // Start transaction
+        let mut tx = pool.begin().await?;
+
+        // Get order details
+        let order = OrderRepository::find_by_id(&mut *tx, order_id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Order"))?;
+
+        // Check permission
+        if !is_admin && order.user_id != *user_id {
+            return Err(AppError::forbidden("You don't have permission to cancel this order"));
+        }
+
+        // Check status
+        if order.status != OrderStatus::Pending {
+            return Err(AppError::bad_request("Only pending orders can be cancelled"));
+        }
+
+        // Get order items
+        let order_items = OrderRepository::get_order_items_with_quantities(&mut *tx, order_id).await?;
+
+        // Restore stock for each product
+       // Restore stock for each product
+for (product_id, quantity) in order_items {
+    // First get current stock before updating
+    let product = sqlx::query!(
+        r#"
+        SELECT stock_quantity FROM products WHERE id = $1
+        "#,
+        product_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    
+    let old_quantity = product.stock_quantity;
+    
+    // Restore stock using existing method
+    ProductRepository::update_stock(&mut *tx, &product_id, quantity).await?;
+    
+    // Log the inventory change
+    ProductRepository::log_inventory_change(
+        &mut *tx,
+        &product_id,
+        quantity,
+        old_quantity,
+        "order_cancel",
+        Some(*order_id),
+        Some(*user_id),
+    ).await?;
+}
+        // Update order status to cancelled
+        OrderRepository::update_order_status(&mut *tx, order_id, OrderStatus::Cancelled).await?;
+
+        // Commit transaction
+        tx.commit().await?;
+
+        Ok(())
     }
 
     pub async fn update_payment_status(
@@ -236,7 +303,7 @@ impl OrderService {
     pub async fn update_order_status(
         pool: &PgPool,
         order_id: &Uuid,
-        status: crate::constants::order_status::OrderStatus,
+        status: OrderStatus,
     ) -> Result<(), AppError> {
         let order = OrderRepository::find_by_id(pool, order_id)
             .await?

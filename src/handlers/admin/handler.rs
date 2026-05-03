@@ -1,5 +1,5 @@
 use axum::{
-    extract::{State, Path, Extension},
+    extract::{State, Path, Extension, Query},
     Json,
 };
 use uuid::Uuid;
@@ -352,4 +352,59 @@ pub async fn mark_order_paid(
     tx.commit().await?;
 
     Ok(Json(serde_json::json!({ "message": "Order marked as paid" })))
+}
+
+// Admin: Get inventory with filters
+pub async fn get_inventory(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Query(params): Query<crate::dtos::InventoryFilter>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if auth_user.role != "admin" {
+        return Err(AppError::forbidden("Admin access required"));
+    }
+    
+    let page = params.page.unwrap_or(1);
+    let page_size = params.page_size.unwrap_or(20);
+    let low_stock_only = params.low_stock_only.unwrap_or(false);
+    let out_of_stock_only = params.out_of_stock_only.unwrap_or(false);
+    
+    let (inventory, total) = crate::services::InventoryService::get_inventory(
+        state.get_db_pool(),
+        params.vendor_id,
+        low_stock_only,
+        out_of_stock_only,
+        params.search,
+        page,
+        page_size,
+    ).await?;
+    
+    Ok(Json(serde_json::json!({
+        "items": inventory,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total as f64 / page_size as f64).ceil() as usize,
+    })))
+}
+
+// Admin: Manual stock adjustment
+pub async fn manual_adjust_stock(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Json(req): Json<crate::dtos::ManualStockAdjustRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if auth_user.role != "admin" {
+        return Err(AppError::forbidden("Admin access required"));
+    }
+    
+    crate::services::InventoryService::manual_adjust_stock(
+        state.get_db_pool(),
+        req,
+        &auth_user.user_id,
+    ).await?;
+    
+    Ok(Json(serde_json::json!({
+        "message": "Stock adjusted successfully"
+    })))
 }

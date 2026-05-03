@@ -94,6 +94,40 @@ pub struct CategoryResponse {
     pub weight: Option<Decimal>,
 }
 
+// ========== Inventory DTOs for Admin ==========
+
+#[derive(Debug, Serialize)]
+pub struct InventoryItemResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub sku: Option<String>,
+    pub stock_quantity: i32,
+    pub low_stock_threshold: i32,
+    pub status: String, // "in_stock", "low_stock", "out_of_stock"
+    pub vendor_id: Option<Uuid>,
+    pub vendor_name: Option<String>,
+    pub price: Decimal,
+    pub is_active: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InventoryFilter {
+    pub vendor_id: Option<Uuid>,
+    pub low_stock_only: Option<bool>,
+    pub out_of_stock_only: Option<bool>,
+    pub search: Option<String>,
+    pub page: Option<usize>,
+    pub page_size: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ManualStockAdjustRequest {
+    pub product_id: Uuid,
+    pub quantity_change: i32, // positive = add, negative = remove
+    pub reason: String,
+}
+
 impl From<crate::models::Category> for CategoryResponse {
     fn from(c: crate::models::Category) -> Self {
         CategoryResponse {
