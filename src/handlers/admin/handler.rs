@@ -120,10 +120,14 @@ pub async fn review_application(
 
     let status = req.get("status").and_then(|s| s.as_str()).ok_or_else(|| AppError::bad_request("Status is required"))?;
 
-    // Get the application to find the user_id
+    // Get the application to find the user_id and application details
     let application = sqlx::query!(
         r#"
-        SELECT user_id FROM vendor_applications WHERE id = $1
+        SELECT 
+            user_id, store_name, store_description, business_address, 
+            phone_number, tax_id, bank_details
+        FROM vendor_applications 
+        WHERE id = $1
         "#,
         application_id
     )
@@ -148,14 +152,37 @@ pub async fn review_application(
     .execute(&mut *tx)
     .await?;
 
-    // If approved, update user role to vendor
+    // If approved, update user role to vendor AND create vendor profile
     if status == "approved" {
+        // Update user role
         sqlx::query!(
             r#"
             UPDATE users SET role = 'vendor', updated_at = NOW()
             WHERE id = $1
             "#,
             application.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+        
+        // Create vendor profile from application data
+        sqlx::query!(
+            r#"
+            INSERT INTO vendor_profiles (
+                id, user_id, store_name, store_description, 
+                business_address, phone_number, tax_id, bank_details,
+                is_approved, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+            "#,
+            Uuid::new_v4(),
+            application.user_id,
+            application.store_name,
+            application.store_description,
+            application.business_address,
+            application.phone_number,
+            application.tax_id,
+            application.bank_details,
         )
         .execute(&mut *tx)
         .await?;
@@ -168,7 +195,6 @@ pub async fn review_application(
         "message": format!("Application {} successfully", status)
     })))
 }
-
 // Admin: Get all users
 pub async fn get_users(
     State(state): State<AppState>,

@@ -1,3 +1,4 @@
+// src/errors/error_response.rs
 use serde::{Deserialize, Serialize};
 use axum::response::{IntoResponse, Response};
 use axum::http::StatusCode;
@@ -43,6 +44,13 @@ impl ErrorResponse {
     pub fn with_status(mut self, status: StatusCode) -> Self {
         self.error.status_code = Some(status.as_u16());
         self
+    }
+    
+    // ADD THIS METHOD
+    pub fn rate_limit() -> Self {
+        Self::new("Too many requests. Please slow down and try again later.")
+            .with_status(StatusCode::TOO_MANY_REQUESTS)
+            .with_code("RATE_LIMIT_EXCEEDED")
     }
 }
 

@@ -27,6 +27,8 @@ pub enum AppError {
     EmailError(String),
     #[error("{0}")]
     PaymentError(String),
+    #[error("Too many requests")]
+    RateLimit,  // ADD THIS
 }
 
 impl From<anyhow::Error> for AppError {
@@ -54,6 +56,7 @@ impl IntoResponse for AppError {
             AppError::InternalServerError => (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong. Please try again.".to_string()),
             AppError::EmailError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::PaymentError(msg) => (StatusCode::PAYMENT_REQUIRED, msg),
+            AppError::RateLimit => (StatusCode::TOO_MANY_REQUESTS, "Too many requests. Please slow down and try again later.".to_string()),  // ADD THIS
         };
 
         let body = json!({
@@ -94,5 +97,8 @@ impl AppError {
     }
     pub fn payment_error(message: impl Into<String>) -> Self {
         AppError::PaymentError(message.into())
+    }
+    pub fn rate_limit() -> Self {  // ADD THIS METHOD
+        AppError::RateLimit
     }
 }

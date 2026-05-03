@@ -1,9 +1,48 @@
+// src/app/router.rs
 use axum::{routing::{get, post, put, delete}, Router, middleware};
+use std::sync::Arc;
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin, review, payments, webhook, wishlist};
 use crate::middleware::auth::auth_middleware;
+use crate::middleware::user_rate_limiter::UserIdKeyExtractor;
 use super::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
+    let default_per_second = state.config.rate_limit_requests as u64;
+    let default_burst = state.config.rate_limit_requests;
+
+    let rate_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().per_second(default_per_second).burst_size(default_burst).use_headers().finish().unwrap()));
+    let strict_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().per_second(1).burst_size(5).use_headers().finish().unwrap()));
+    let password_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().per_second(1200).burst_size(3).use_headers().finish().unwrap()));
+    let checkout_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().per_second(1).burst_size(10).use_headers().finish().unwrap()));
+    let admin_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().per_second(default_per_second).burst_size(default_burst).use_headers().finish().unwrap()));
+    let user_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().key_extractor(UserIdKeyExtractor).per_second(10).burst_size(30).use_headers().finish().unwrap()));
+
+    let public_routes = Router::new()
+        .route("/health", get(health::health_check))
+        .route("/health/ready", get(health::readiness_check))
+        .route("/health/live", get(health::liveness_check))
+        .route("/api/products/featured", get(product::get_featured_products))
+        .route("/api/products/search", get(product::search_products))
+        .route("/api/products", get(product::list_products))
+        .route("/api/products/{id}", get(product::get_product))
+        .route("/api/categories", get(product::list_categories))
+        .route("/api/shipping/settings", get(admin::get_shipping_settings))
+        .route("/api/reviews/product/{product_id}", get(review::get_product_reviews))
+        .route("/api/reviews/{review_id}/replies", get(review::get_review_replies))
+        .layer(rate_limiter);
+
+    let auth_routes = Router::new()
+        .route("/api/auth/register", post(auth::register))
+        .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/refresh", post(auth::refresh_token))
+        .layer(strict_limiter);
+
+    let password_reset_routes = Router::new()
+        .route("/api/auth/forgot-password", post(auth::forgot_password))
+        .route("/api/auth/reset-password", post(auth::reset_password))
+        .layer(password_limiter);
+
     let protected_routes = Router::new()
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/change-password", post(auth::change_password))
@@ -11,26 +50,22 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/cart", get(cart::get_cart).post(cart::add_to_cart))
         .route("/api/cart/clear", delete(cart::clear_cart))
         .route("/api/cart/items/{item_id}", put(cart::update_cart_item).delete(cart::remove_from_cart))
-        .route("/api/checkout", post(order::checkout))
         .route("/api/orders", post(order::checkout).get(order::get_my_orders))
         .route("/api/orders/{order_id}", get(order::get_order))
         .route("/api/orders/{order_id}/cancel", put(order::cancel_order))
         .route("/api/admin/orders/{order_id}/status", put(order::update_order_status))
         .route("/api/addresses", get(address::get_addresses).post(address::create_address))
         .route("/api/addresses/{address_id}", put(address::update_address).delete(address::delete_address))
-        // Review routes (authenticated)
         .route("/api/reviews", post(review::create_review))
         .route("/api/reviews/user/{product_id}", get(review::check_user_review))
         .route("/api/reviews/{review_id}/helpful", post(review::mark_review_helpful))
         .route("/api/reviews/{review_id}/replies", post(review::add_reply_to_review))
         .route("/api/reviews/user-votes", post(review::get_user_review_votes))
-        // Wishlist routes
         .route("/api/wishlist", get(wishlist::get_wishlist))
         .route("/api/wishlist", post(wishlist::add_to_wishlist))
         .route("/api/wishlist/{product_id}", delete(wishlist::remove_from_wishlist))
         .route("/api/wishlist/check/{product_id}", get(wishlist::check_in_wishlist))
         .route("/api/wishlist/count", get(wishlist::get_wishlist_count))
-        // Admin routes (protected)
         .route("/api/admin/stats", get(admin::get_stats))
         .route("/api/admin/vendor/applications", get(admin::get_vendor_applications))
         .route("/api/admin/vendor/applications/{application_id}", put(admin::review_application))
@@ -39,7 +74,6 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/products", get(admin::get_all_products))
         .route("/api/admin/orders", get(admin::get_all_orders))
         .route("/api/admin/orders/{order_id}/mark-paid", put(admin::mark_order_paid))
-        // Vendor routes
         .route("/api/vendor/products", get(vendor::get_my_products).post(vendor::create_product))
         .route("/api/vendor/products/{product_id}", put(vendor::update_product).delete(vendor::delete_product))
         .route("/api/vendor/apply", post(vendor::apply_for_vendor))
@@ -48,43 +82,36 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/vendor/stats", get(vendor::get_vendor_stats))
         .route("/api/vendor/orders", get(vendor::get_vendor_orders))
         .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status))
-        
-        // Payment routes
         .route("/api/payments/initiate", post(payments::initiate_payment))
-        .route("/api/payments/crypto/status/{charge_id}", get(payments::get_crypto_status));
-        
+        .route("/api/payments/crypto/status/{charge_id}", get(payments::get_crypto_status))
+        .layer(user_limiter)
+        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+
     let admin_routes = Router::new()
         .route("/api/admin/shipping/settings", get(admin::get_shipping_settings).put(admin::update_shipping_settings))
         .route("/api/admin/products/{product_id}/status", put(admin::update_product_status))
         .route("/api/admin/inventory", get(admin::get_inventory))
         .route("/api/admin/inventory/adjust", post(admin::manual_adjust_stock))
-        .route("/api/admin/inventory/low-stock", get(admin::get_low_stock_summary));
+        .route("/api/admin/inventory/low-stock", get(admin::get_low_stock_summary))
+        .layer(admin_limiter)
+        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+
+    let checkout_routes = Router::new()
+        .route("/api/checkout", post(order::checkout))
+        .layer(checkout_limiter)
+        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+
+    let webhook_routes = Router::new()
+        .route("/api/webhook/stripe", post(webhook::stripe_webhook))
+        .route("/api/webhook/coinbase", post(webhook::coinbase_webhook));
 
     Router::new()
-        .route("/health", get(health::health_check))
-        .route("/health/ready", get(health::readiness_check))
-        .route("/health/live", get(health::liveness_check))
-        .route("/api/auth/register", post(auth::register))
-        .route("/api/auth/login", post(auth::login))
-        .route("/api/auth/refresh", post(auth::refresh_token))
-        .route("/api/auth/forgot-password", post(auth::forgot_password))
-        .route("/api/auth/reset-password", post(auth::reset_password))
-        .route("/api/categories", get(product::list_categories))
-        .route("/api/products/featured", get(product::get_featured_products))
-        .route("/api/products/search", get(product::search_products))
-        .route("/api/products", get(product::list_products))
-        .route("/api/products/{id}", get(product::get_product))
-        .route("/api/shipping/settings", get(admin::get_shipping_settings))
-
-        // Public review routes
-        .route("/api/reviews/product/{product_id}", get(review::get_product_reviews))
-        .route("/api/reviews/{review_id}/replies", get(review::get_review_replies))
-        
-        // Webhook routes
-        .route("/api/webhook/stripe", post(webhook::stripe_webhook))
-        .route("/api/webhook/coinbase", post(webhook::coinbase_webhook))
-
-        .merge(protected_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
-        .merge(admin_routes.layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
+        .merge(public_routes)
+        .merge(auth_routes)
+        .merge(password_reset_routes)
+        .merge(protected_routes)
+        .merge(admin_routes)
+        .merge(checkout_routes)
+        .merge(webhook_routes)
         .with_state(state)
 }
