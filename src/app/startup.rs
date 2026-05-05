@@ -8,8 +8,8 @@ use crate::middleware::logging::logging_middleware;
 use tower_http::trace::TraceLayer;
 use std::net::SocketAddr;
 use sqlx::PgPool;
-use tower_governor::governor::GovernorConfigBuilder;
-use std::sync::Arc;
+// use tower_governor::governor::GovernorConfigBuilder;
+// use std::sync::Arc;
 use axum::middleware;
 // use tokio::signal;  // Commented out - part of graceful shutdown
 // use tokio::time::Duration;  // Commented out - part of graceful shutdown
@@ -35,7 +35,8 @@ pub async fn start_server(config: AppConfig, db_pool: PgPool) -> anyhow::Result<
         }
     });
 
-    // Rate limiter memory cleanup
+        // Rate limiter memory cleanup - COMMENTED OUT FOR DEVELOPMENT
+    /*
     let limiter_config = Arc::new(
         GovernorConfigBuilder::default()
             .per_second(1)
@@ -51,6 +52,7 @@ pub async fn start_server(config: AppConfig, db_pool: PgPool) -> anyhow::Result<
             limiter.retain_recent();
         }
     });
+    */
 
     let app = create_router(state)
         .layer(middleware::from_fn(security_headers_middleware))

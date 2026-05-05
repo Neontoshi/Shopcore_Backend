@@ -23,6 +23,13 @@ pub struct Order {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    // Shipment tracking fields
+    pub tracking_number: Option<String>,
+    pub carrier: Option<String>,
+    pub tracking_url: Option<String>,
+    pub shipped_at: Option<DateTime<Utc>>,
+    pub estimated_delivery: Option<DateTime<Utc>>,
+    pub delivered_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -58,7 +65,7 @@ pub struct Address {
     pub postal_code: String,
     pub country: String,
     pub is_default: bool,
-    pub address_type: String, // 'shipping' or 'billing'
+    pub address_type: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

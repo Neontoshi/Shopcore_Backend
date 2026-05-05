@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize)]
 pub struct InitiatePaymentRequest {
     pub order_id: Uuid,
-    pub payment_method: String, // "credit_card", "bank_transfer", "eth", "solana"
+    pub payment_method: String, // "credit_card", "bank_transfer", "eth", "solana", "nowpayments"
 }
 
 #[derive(Serialize)]
@@ -118,6 +118,31 @@ pub async fn initiate_payment(
                 message: "Crypto payment initiated".into(),
             }))
         }
+
+    "nowpayments" => {
+        let (charge_id, checkout_url) = PaymentService::create_nowpayments_payment(
+            total,
+            req.order_id,
+            &order.order_number,
+        ).await?;
+
+        PaymentService::record_transaction(
+            state.get_db_pool(),
+            &req.order_id,
+            total,
+            "crypto_nowpayments",
+            &charge_id,
+            "pending",
+        ).await?;
+
+        Ok(Json(InitiatePaymentResponse {
+            client_secret: None,
+            checkout_url: Some(checkout_url),
+            charge_id: Some(charge_id),
+            reference: None,
+            message: "Crypto payment initiated".into(),
+        }))
+    }
 
         _ => Err(AppError::bad_request("Invalid payment method")),
     }

@@ -24,3 +24,4 @@ pub use vendor_dto::*;
 pub use shipping_settings_dto::*;
 pub use review_dto::*;
 pub use wishlist_dto::*;
+pub mod shipment_dto;

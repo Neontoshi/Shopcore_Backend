@@ -133,4 +133,51 @@ impl PaymentService {
         
         Ok(())
     }
+    
+    pub async fn create_nowpayments_payment(
+    amount: Decimal,
+    order_id: Uuid,
+    order_number: &str,
+) -> Result<(String, String), AppError> {
+    let client = HttpClient::new();
+    let api_key = std::env::var("NOWPAYMENTS_API_KEY")
+        .map_err(|_| AppError::payment_error("Missing NOWPayments API key"))?;
+    let base_url = std::env::var("APP_URL")
+        .unwrap_or("http://localhost:5173".into());
+
+    let body = serde_json::json!({
+        "price_amount": amount.to_string(),
+        "price_currency": "usd",
+        "ipn_callback_url": format!("{}/webhooks/nowpayments", base_url),
+        "order_id": order_id.to_string(),
+        "order_description": format!("Order {}", order_number),
+        "success_url": format!("{}/orders/{}", base_url, order_id),
+        "cancel_url": format!("{}/cart", base_url),
+    });
+
+    let response = client
+        .post("https://api.nowpayments.io/v1/invoice")
+        .header("x-api-key", api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::payment_error(e.to_string()))?;
+
+    let result: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| AppError::payment_error(e.to_string()))?;
+
+    let invoice_id = result["id"]
+        .as_str()
+        .ok_or_else(|| AppError::payment_error("No invoice ID"))?
+        .to_string();
+
+    let invoice_url = result["invoice_url"]
+        .as_str()
+        .ok_or_else(|| AppError::payment_error("No invoice URL"))?
+        .to_string();
+
+    Ok((invoice_id, invoice_url))
+}
 }

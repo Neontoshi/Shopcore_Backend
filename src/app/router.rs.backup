@@ -1,16 +1,13 @@
 // src/app/router.rs
 use axum::{routing::{get, post, put, delete}, Router, middleware};
-// use std::sync::Arc;
-// use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};  // COMMENTED OUT - Rate limiting disabled for development
+use std::sync::Arc;
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use crate::handlers::{health, auth, product, cart, order, address, user, vendor, admin, review, payments, webhook, wishlist};
 use crate::middleware::auth::auth_middleware;
-// use crate::middleware::user_rate_limiter::UserIdKeyExtractor;  // COMMENTED OUT - Rate limiting disabled for development
+use crate::middleware::user_rate_limiter::UserIdKeyExtractor;
 use super::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
-    // RATE LIMITING - COMMENTED OUT FOR DEVELOPMENT
-    // Uncomment when ready for production
-    /*
     let default_per_second = state.config.rate_limit_requests as u64;
     let default_burst = state.config.rate_limit_requests;
 
@@ -20,7 +17,6 @@ pub fn create_router(state: AppState) -> Router {
     let checkout_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().per_second(1).burst_size(10).use_headers().finish().unwrap()));
     let admin_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().per_second(default_per_second).burst_size(default_burst).use_headers().finish().unwrap()));
     let user_limiter = GovernorLayer::new(Arc::new(GovernorConfigBuilder::default().key_extractor(UserIdKeyExtractor).per_second(10).burst_size(30).use_headers().finish().unwrap()));
-    */
 
     let public_routes = Router::new()
         .route("/health", get(health::health_check))
@@ -33,19 +29,19 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/categories", get(product::list_categories))
         .route("/api/shipping/settings", get(admin::get_shipping_settings))
         .route("/api/reviews/product/{product_id}", get(review::get_product_reviews))
-        .route("/api/reviews/{review_id}/replies", get(review::get_review_replies));
-        // .layer(rate_limiter);  // COMMENTED OUT
+        .route("/api/reviews/{review_id}/replies", get(review::get_review_replies))
+        .layer(rate_limiter);
 
     let auth_routes = Router::new()
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
-        .route("/api/auth/refresh", post(auth::refresh_token));
-        // .layer(strict_limiter);  // COMMENTED OUT
+        .route("/api/auth/refresh", post(auth::refresh_token))
+        .layer(strict_limiter);
 
     let password_reset_routes = Router::new()
         .route("/api/auth/forgot-password", post(auth::forgot_password))
-        .route("/api/auth/reset-password", post(auth::reset_password));
-        // .layer(password_limiter);  // COMMENTED OUT
+        .route("/api/auth/reset-password", post(auth::reset_password))
+        .layer(password_limiter);
 
     let protected_routes = Router::new()
         .route("/api/auth/logout", post(auth::logout))
@@ -80,7 +76,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status))
         .route("/api/payments/initiate", post(payments::initiate_payment))
         .route("/api/payments/crypto/status/{charge_id}", get(payments::get_crypto_status))
-        // .layer(user_limiter)  // COMMENTED OUT
+        .layer(user_limiter)
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     let admin_routes = Router::new()
@@ -98,18 +94,18 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/products", get(admin::get_all_products))
         .route("/api/admin/orders", get(admin::get_all_orders))
         .route("/api/admin/orders/{order_id}/mark-paid", put(admin::mark_order_paid))
-        // .layer(admin_limiter)  // COMMENTED OUT
+        .layer(admin_limiter)
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     let checkout_routes = Router::new()
         .route("/api/checkout", post(order::checkout))
-        // .layer(checkout_limiter)  // COMMENTED OUT
+        .layer(checkout_limiter)
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     let webhook_routes = Router::new()
-        .route("/api/webhook/stripe", post(webhook::stripe_webhook))
-        .route("/api/webhook/nowpayments", post(webhook::nowpayments_webhook))
-        .route("/api/webhook/coinbase", post(webhook::coinbase_webhook));
+    .route("/api/webhook/stripe", post(webhook::stripe_webhook))
+    .route("/api/webhook/nowpayments", post(webhook::nowpayments_webhook))
+    .route("/api/webhook/coinbase", post(webhook::coinbase_webhook));
 
     Router::new()
         .merge(public_routes)

@@ -3,7 +3,7 @@ use crate::repositories::{CartRepository, OrderRepository, AddressRepository, Pr
 use crate::services::shipping_service::ShippingService;
 use crate::dtos::{CheckoutResponse, OrderResponse, OrderItemResponse};
 use crate::errors::AppError;
-use crate::constants::order_status::OrderStatus;  // ADD THIS IMPORT
+use crate::constants::order_status::OrderStatus;
 use sqlx::PgPool;
 use uuid::Uuid;
 use rust_decimal::Decimal;
@@ -118,7 +118,9 @@ impl OrderService {
         }
 
         OrderRepository::add_order_items(&mut *tx, &order.id, order_items).await?;
-        CartRepository::clear_cart(&mut *tx, &cart.id).await?;
+        
+        // COMMENTED OUT - Don't clear cart until payment is confirmed
+        // CartRepository::clear_cart(&mut *tx, &cart.id).await?;
 
         tx.commit().await?;
 
@@ -162,34 +164,34 @@ impl OrderService {
         let order_items = OrderRepository::get_order_items_with_quantities(&mut *tx, order_id).await?;
 
         // Restore stock for each product
-       // Restore stock for each product
-for (product_id, quantity) in order_items {
-    // First get current stock before updating
-    let product = sqlx::query!(
-        r#"
-        SELECT stock_quantity FROM products WHERE id = $1
-        "#,
-        product_id
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    
-    let old_quantity = product.stock_quantity;
-    
-    // Restore stock using existing method
-    ProductRepository::update_stock(&mut *tx, &product_id, quantity).await?;
-    
-    // Log the inventory change
-    ProductRepository::log_inventory_change(
-        &mut *tx,
-        &product_id,
-        quantity,
-        old_quantity,
-        "order_cancel",
-        Some(*order_id),
-        Some(*user_id),
-    ).await?;
-}
+        for (product_id, quantity) in order_items {
+            // First get current stock before updating
+            let product = sqlx::query!(
+                r#"
+                SELECT stock_quantity FROM products WHERE id = $1
+                "#,
+                product_id
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            
+            let old_quantity = product.stock_quantity;
+            
+            // Restore stock using existing method
+            ProductRepository::update_stock(&mut *tx, &product_id, quantity).await?;
+            
+            // Log the inventory change
+            ProductRepository::log_inventory_change(
+                &mut *tx,
+                &product_id,
+                quantity,
+                old_quantity,
+                "order_cancel",
+                Some(*order_id),
+                Some(*user_id),
+            ).await?;
+        }
+        
         // Update order status to cancelled
         OrderRepository::update_order_status(&mut *tx, order_id, OrderStatus::Cancelled).await?;
 
