@@ -689,6 +689,14 @@ CREATE TABLE IF NOT EXISTS shipping_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    admin_id UUID NOT NULL REFERENCES users(id),
+    action VARCHAR(100) NOT NULL,
+    order_id UUID REFERENCES orders(id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Insert default shipping settings
 INSERT INTO shipping_settings (rate_per_kg, free_shipping_threshold)
 VALUES (2.50, 100.00);

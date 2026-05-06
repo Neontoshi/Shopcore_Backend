@@ -80,6 +80,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/vendor/orders/{order_id}/status", put(vendor::update_order_status))
         .route("/api/payments/initiate", post(payments::initiate_payment))
         .route("/api/payments/crypto/status/{charge_id}", get(payments::get_crypto_status))
+        .route("/api/orders/{order_id}/tracking", get(order::tracking_handler::get_order_tracking))
         // .layer(user_limiter)  // COMMENTED OUT
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
@@ -98,6 +99,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/products", get(admin::get_all_products))
         .route("/api/admin/orders", get(admin::get_all_orders))
         .route("/api/admin/orders/{order_id}/mark-paid", put(admin::mark_order_paid))
+        .route("/api/admin/orders/{order_id}/tracking", post(admin::shipment_handler::add_tracking))
+        .route("/api/admin/orders/{order_id}/delivered", put(admin::shipment_handler::mark_delivered))
         // .layer(admin_limiter)  // COMMENTED OUT
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
@@ -109,7 +112,8 @@ pub fn create_router(state: AppState) -> Router {
     let webhook_routes = Router::new()
         .route("/api/webhook/stripe", post(webhook::stripe_webhook))
         .route("/api/webhook/nowpayments", post(webhook::nowpayments_webhook))
-        .route("/api/webhook/coinbase", post(webhook::coinbase_webhook));
+        .route("/api/webhook/coinbase", post(webhook::coinbase_webhook))
+        .route("/api/webhook/carrier", post(webhook::carrier_webhook)); 
 
     Router::new()
         .merge(public_routes)

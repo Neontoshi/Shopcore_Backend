@@ -10,6 +10,12 @@ ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 -- Create index for tracking number lookups
 CREATE INDEX IF NOT EXISTS idx_orders_tracking_number ON orders(tracking_number);
 
+-- Normalize any legacy status values before applying the constraint
+UPDATE orders SET status = 'delivered'  WHERE status = 'completed';
+UPDATE orders SET status = 'cancelled'  WHERE status = 'refunded';
+UPDATE orders SET status = 'cancelled'  WHERE status = 'failed';
+UPDATE orders SET status = 'processing' WHERE status NOT IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled');
+
 -- Update order status constraints
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
 ALTER TABLE orders ADD CONSTRAINT orders_status_check 

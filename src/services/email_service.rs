@@ -7,7 +7,7 @@ use crate::config::AppConfig;
 use crate::errors::AppError;
 use crate::models::{Order, OrderItem, Address};
 use std::collections::HashMap;
-use chrono::Datelike;
+use chrono::{DateTime, Datelike, Utc};
 
 
 #[derive(Clone)]  // Add this line
@@ -42,6 +42,10 @@ impl EmailService {
         tera.add_raw_template("password_reset", PASSWORD_RESET_TEMPLATE)
             .map_err(|e| AppError::email_error(e.to_string()))?;
         tera.add_raw_template("low_stock_alert", LOW_STOCK_ALERT_TEMPLATE)
+            .map_err(|e| AppError::email_error(e.to_string()))?;
+        tera.add_raw_template("shipment_notification", SHIPMENT_NOTIFICATION_TEMPLATE)
+            .map_err(|e| AppError::email_error(e.to_string()))?;
+        tera.add_raw_template("delivery_confirmation", DELIVERY_CONFIRMATION_TEMPLATE)
             .map_err(|e| AppError::email_error(e.to_string()))?;
         
         Ok(Self {
@@ -178,6 +182,55 @@ impl EmailService {
             .map_err(|e: lettre::transport::smtp::Error| AppError::email_error(e.to_string()))?;
         
         Ok(())
+    }
+
+    // Enhanced shipment notification with full tracking details
+    pub async fn send_shipment_notification(
+        &self,
+        to_email: &str,
+        customer_name: &str,
+        order_number: &str,
+        tracking_number: &str,
+        carrier: &str,
+        tracking_url: &str,
+        estimated_delivery: Option<DateTime<Utc>>,
+    ) -> Result<(), AppError> {
+        let mut context = Context::new();
+        context.insert("customer_name", customer_name);
+        context.insert("order_number", order_number);
+        context.insert("tracking_number", tracking_number);
+        context.insert("carrier", &carrier.to_uppercase());
+        context.insert("tracking_url", tracking_url);
+        context.insert("year", &chrono::Utc::now().year());
+        
+        let estimated = match estimated_delivery {
+            Some(date) => date.format("%B %d, %Y").to_string(),
+            None => "Updates coming soon".to_string(),
+        };
+        context.insert("estimated_delivery", &estimated);
+        
+        let html = self.tera.render("shipment_notification", &context)
+            .map_err(|e| AppError::email_error(e.to_string()))?;
+        
+        self.send_email(to_email, &format!("✨ Your order #{} has shipped!", order_number), &html).await
+    }
+
+    // Enhanced delivery confirmation email
+    pub async fn send_delivery_confirmation(
+        &self,
+        to_email: &str,
+        customer_name: &str,
+        order_number: &str,
+    ) -> Result<(), AppError> {
+        let mut context = Context::new();
+        context.insert("customer_name", customer_name);
+        context.insert("order_number", order_number);
+        context.insert("year", &chrono::Utc::now().year());
+        
+        let html = self.tera.render("delivery_confirmation", &context)
+            .map_err(|e| AppError::email_error(e.to_string()))?;
+        
+        self.send_email(to_email, &format!("🎉 Your order #{} has been delivered!", order_number), &html).await
     }
 }
 
@@ -392,6 +445,86 @@ const LOW_STOCK_ALERT_TEMPLATE: &str = r#"
         </div>
         <div class="footer">
             <p>This is an automated alert from Shopcore. Please review your inventory.</p>
+            <p>&copy; {{ year }} Shopcore. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+"#;
+
+const SHIPMENT_NOTIFICATION_TEMPLATE: &str = r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #3b82f6; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9fafb; }
+        .tracking-box { background: white; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #e5e7eb; }
+        .button { background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #6b7280; }
+        .carrier { font-weight: bold; color: #4F46E5; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>📦 Your Order Has Shipped!</h2>
+        </div>
+        <div class="content">
+            <h2>Hello {{ customer_name }}!</h2>
+            <p>Great news! Your order <strong>#{{ order_number }}</strong> is on its way.</p>
+            
+            <div class="tracking-box">
+                <h3>Tracking Information</h3>
+                <p><strong>Carrier:</strong> <span class="carrier">{{ carrier }}</span></p>
+                <p><strong>Tracking Number:</strong> {{ tracking_number }}</p>
+                <p><strong>Estimated Delivery:</strong> {{ estimated_delivery }}</p>
+            </div>
+            
+            <a href="{{ tracking_url }}" class="button">Track Your Package →</a>
+            
+            <p style="margin-top: 20px; font-size: 14px;">You can also track your order status in your account dashboard.</p>
+        </div>
+        <div class="footer">
+            <p>Thank you for shopping with us!</p>
+            <p>&copy; {{ year }} Shopcore. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+"#;
+
+const DELIVERY_CONFIRMATION_TEMPLATE: &str = r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #10b981; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9fafb; text-align: center; }
+        .button { background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #6b7280; }
+        .checkmark { font-size: 48px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>🎉 Order Delivered!</h2>
+        </div>
+        <div class="content">
+            <div class="checkmark">✅</div>
+            <h2>Hello {{ customer_name }}!</h2>
+            <p>Great news! Your order <strong>#{{ order_number }}</strong> has been delivered.</p>
+            <p>We hope you love your purchase! If you have any questions, our support team is here to help.</p>
+            <a href="https://shopcore.com/orders/{{ order_number }}" class="button">View Order Details</a>
+            <p style="margin-top: 30px;">Enjoy your purchase! 🎁</p>
+        </div>
+        <div class="footer">
+            <p>Thank you for shopping with us!</p>
             <p>&copy; {{ year }} Shopcore. All rights reserved.</p>
         </div>
     </div>

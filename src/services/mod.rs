@@ -11,6 +11,9 @@ pub mod payment_service;
 pub mod shipping_service;
 pub mod inventory_service;
 pub mod alert_service;
+pub mod shipment_tracking_service;
+pub mod trackingmore_api;
+
 
 pub use auth_service::AuthService;
 pub use product_service::ProductService;
@@ -25,3 +28,5 @@ pub use payment_service::PaymentService;
 pub use shipping_service::ShippingService;
 pub use inventory_service::InventoryService;
 pub use alert_service::AlertService;
+pub use shipment_tracking_service::ShipmentTrackingService;
+pub use trackingmore_api::*;

@@ -38,7 +38,9 @@ impl OrderRepository {
             RETURNING id, user_id, order_number, status as "status: OrderStatus", 
                       subtotal, tax, shipping_cost, total, shipping_address_id, 
                       billing_address_id, payment_method, payment_status, notes,
-                      created_at, updated_at, completed_at
+                      created_at, updated_at, completed_at,
+                      tracking_number, carrier, tracking_url,
+                      shipped_at, estimated_delivery, delivered_at
             "#,
             Uuid::new_v4(),
             user_id,
@@ -103,7 +105,9 @@ impl OrderRepository {
             SELECT id, user_id, order_number, status as "status: OrderStatus",
                    subtotal, tax, shipping_cost, total, shipping_address_id,
                    billing_address_id, payment_method, payment_status, notes,
-                   created_at, updated_at, completed_at
+                   created_at, updated_at, completed_at,
+                   tracking_number, carrier, tracking_url,
+                   shipped_at, estimated_delivery, delivered_at
             FROM orders
             WHERE id = $1
             "#,
@@ -128,7 +132,9 @@ impl OrderRepository {
             SELECT id, user_id, order_number, status as "status: OrderStatus",
                    subtotal, tax, shipping_cost, total, shipping_address_id,
                    billing_address_id, payment_method, payment_status, notes,
-                   created_at, updated_at, completed_at
+                   created_at, updated_at, completed_at,
+                   tracking_number, carrier, tracking_url,
+                   shipped_at, estimated_delivery, delivered_at
             FROM orders
             WHERE order_number = $1
             "#,
@@ -178,7 +184,9 @@ impl OrderRepository {
             SELECT id, user_id, order_number, status as "status: OrderStatus",
                    subtotal, tax, shipping_cost, total, shipping_address_id,
                    billing_address_id, payment_method, payment_status, notes,
-                   created_at, updated_at, completed_at
+                   created_at, updated_at, completed_at,
+                   tracking_number, carrier, tracking_url,
+                   shipped_at, estimated_delivery, delivered_at
             FROM orders
             WHERE user_id = $1
             ORDER BY created_at DESC
