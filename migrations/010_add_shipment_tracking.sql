@@ -19,4 +19,4 @@ UPDATE orders SET status = 'processing' WHERE status NOT IN ('pending', 'process
 -- Update order status constraints
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
 ALTER TABLE orders ADD CONSTRAINT orders_status_check 
-CHECK (status IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled'));
+    CHECK (status IN ('pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'));

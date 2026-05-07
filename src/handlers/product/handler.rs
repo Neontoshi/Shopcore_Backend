@@ -32,8 +32,14 @@ pub async fn list_products(
         offset,
     ).await?;
     
-    // TEMPORARY: Skip count_search to fix error
-    let total = products.len() as i64;
+        let total = ProductRepository::count_search(
+        state.get_db_pool(),
+        params.query.as_deref(),
+        params.category_id,
+        params.min_price,
+        params.max_price,
+        is_active,
+    ).await?;
     
     let product_responses: Vec<ProductResponse> = products.into_iter().map(|p| p.into()).collect();
     

@@ -5,6 +5,8 @@ use axum::{
 use crate::app::state::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
+use crate::constants::order_status::OrderStatus;
+use std::str::FromStr;
 
 pub async fn get_vendor_orders(
     State(state): State<AppState>,
@@ -114,8 +116,16 @@ pub async fn update_order_status(
         return Err(AppError::forbidden("Only vendors can update order status"));
     }
 
-    let status = req.get("status").and_then(|s| s.as_str()).ok_or_else(|| AppError::bad_request("Status is required"))?;
+    // Parse and validate the requested status against the enum
+    let new_status_str = req
+        .get("status")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| AppError::bad_request("Status is required"))?;
 
+    let new_status = OrderStatus::from_str(new_status_str)
+        .map_err(|_| AppError::bad_request(&format!("Invalid status: '{}'", new_status_str)))?;
+
+    // Verify this vendor has products in the order
     let has_vendor_products = sqlx::query!(
         r#"
         SELECT COUNT(*) as count
@@ -135,12 +145,29 @@ pub async fn update_order_status(
         return Err(AppError::forbidden("You don't have permission to update this order"));
     }
 
+    // Fetch current status and enforce valid transitions
+    let current_status_str = sqlx::query!(
+        "SELECT status FROM orders WHERE id = $1",
+        order_id
+    )
+    .fetch_optional(state.get_db_pool())
+    .await?
+    .ok_or_else(|| AppError::not_found("Order"))?
+    .status;
+
+    let current_status = OrderStatus::from_str(&current_status_str)
+        .map_err(|_| AppError::bad_request("Order has unrecognised status in database"))?;
+
+    if !current_status.can_transition_to(new_status) {
+        return Err(AppError::bad_request(&format!(
+            "Cannot transition order from '{}' to '{}'",
+            current_status, new_status
+        )));
+    }
+
     sqlx::query!(
-        r#"
-        UPDATE orders SET status = $1, updated_at = NOW()
-        WHERE id = $2
-        "#,
-        status,
+        "UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2",
+        new_status.to_string(),
         order_id
     )
     .execute(state.get_db_pool())
