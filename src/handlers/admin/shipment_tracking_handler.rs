@@ -115,6 +115,30 @@ pub async fn add_tracking(
     })))
 }
 
+// Admin: Update estimated delivery date
+pub async fn update_estimated_delivery(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Path(order_id): Path<Uuid>,
+    Json(req): Json<UpdateEstimatedDeliveryRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !auth_user.role.can_access_admin() {
+        return Err(AppError::forbidden("Only admins can update estimated delivery"));
+    }
+    
+    ShipmentTrackingService::update_estimated_delivery(
+        state.get_db_pool(),
+        &order_id,
+        req.estimated_delivery,
+    ).await?;
+    
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "Estimated delivery date updated",
+        "order_id": order_id.to_string()
+    })))
+}
+
 // Admin: Mark order as delivered
 pub async fn mark_delivered(
     State(state): State<AppState>,
@@ -177,4 +201,5 @@ pub async fn mark_delivered(
         "message": "Order marked as delivered and customer notified",
         "order_id": order_id.to_string()
     })))
+
 }

@@ -122,53 +122,62 @@ impl ProductRepository {
             .await?;
         Ok(())
     }
-
-    pub async fn search(
-        pool: &PgPool,
-        query: Option<&str>,
-        category_id: Option<Uuid>,
-        min_price: Option<Decimal>,
-        max_price: Option<Decimal>,
-        is_active: Option<bool>,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Product>, AppError> {
-        let mut sql = String::from(
-            "SELECT id, name, slug, description, price, compare_at_price, weight, \
-             stock_quantity, category_id, sku, is_active, image_url, \
-             average_rating, total_reviews, vendor_id, created_at, updated_at \
-             FROM products WHERE 1=1"
-        );
-        
-        if let Some(is_active) = is_active {
-            sql.push_str(&format!(" AND is_active = {}", if is_active { "TRUE" } else { "FALSE" }));
-        }
-        
-        if let Some(category_id) = category_id {
-            sql.push_str(&format!(" AND category_id = '{}'", category_id));
-        }
-        
-        if let Some(min_price) = min_price {
-            sql.push_str(&format!(" AND price >= {}", min_price));
-        }
-        
-        if let Some(max_price) = max_price {
-            sql.push_str(&format!(" AND price <= {}", max_price));
-        }
-        
-        if let Some(query_str) = query {
-            sql.push_str(&format!(" AND (name ILIKE '%{}%' OR description ILIKE '%{}%')", query_str, query_str));
-        }
-        
-        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {} OFFSET {}", limit, offset));
-        
-        let products = sqlx::query_as::<_, Product>(&sql)
-            .fetch_all(pool)
-            .await?;
-        
-        Ok(products)
-    }
+        pub async fn search(
+    pool: &PgPool,
+    query: Option<&str>,
+    category_id: Option<Uuid>,
+    min_price: Option<Decimal>,
+    max_price: Option<Decimal>,
+    is_active: Option<bool>,
+    sort: Option<&str>,           // <-- ADD THIS PARAMETER
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Product>, AppError> {
+    let search_pattern = query.map(|q| format!("%{}%", q));
     
+    // Determine ORDER BY based on sort
+    let order_clause = match sort {
+        Some("popular") => "ORDER BY total_reviews DESC NULLS LAST, created_at DESC",
+        Some("rating") => "ORDER BY average_rating DESC NULLS LAST, created_at DESC",
+        Some("price_asc") => "ORDER BY price ASC, created_at DESC",
+        Some("price_desc") => "ORDER BY price DESC, created_at DESC",
+        _ => "ORDER BY created_at DESC",  // newest (default)
+    };
+
+    let sql = format!(
+        r#"
+        SELECT 
+            id, name, slug, description, 
+            price, compare_at_price, weight,
+            stock_quantity, category_id, sku, is_active, image_url,
+            average_rating, total_reviews, vendor_id,
+            created_at, updated_at
+        FROM products 
+        WHERE 
+            ($1::bool IS NULL OR is_active = $1)
+            AND ($2::uuid IS NULL OR category_id = $2)
+            AND ($3::numeric IS NULL OR price >= $3)
+            AND ($4::numeric IS NULL OR price <= $4)
+            AND ($5::text IS NULL OR name ILIKE '%' || $5::text || '%' OR description ILIKE '%' || $5::text || '%')
+        {order_clause}
+        LIMIT $6 OFFSET $7
+        "#
+    );
+
+    let products = sqlx::query_as::<_, Product>(&sql)
+        .bind(is_active)
+        .bind(category_id)
+        .bind(min_price)
+        .bind(max_price)
+        .bind(search_pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
+    
+    Ok(products)
+}
+
     pub async fn count_search(
         pool: &PgPool,
         query: Option<&str>,
@@ -177,35 +186,34 @@ impl ProductRepository {
         max_price: Option<Decimal>,
         is_active: Option<bool>,
     ) -> Result<i64, AppError> {
-        let mut sql = String::from("SELECT COUNT(*) FROM products WHERE 1=1");
-        
-        if let Some(is_active) = is_active {
-            sql.push_str(&format!(" AND is_active = {}", if is_active { "TRUE" } else { "FALSE" }));
-        }
-        
-        if let Some(category_id) = category_id {
-            sql.push_str(&format!(" AND category_id = '{}'", category_id));
-        }
-        
-        if let Some(min_price) = min_price {
-            sql.push_str(&format!(" AND price >= {}", min_price));
-        }
-        
-        if let Some(max_price) = max_price {
-            sql.push_str(&format!(" AND price <= {}", max_price));
-        }
-        
-        if let Some(query_str) = query {
-            sql.push_str(&format!(" AND (name ILIKE '%{}%' OR description ILIKE '%{}%')", query_str, query_str));
-        }
-        
-        let count: i64 = sqlx::query_scalar(&sql)
-            .fetch_one(pool)
-            .await?;
-        
-        Ok(count)
-    }
+        let search_pattern = query.map(|q| format!("%{}%", q));
 
+        let row = sqlx::query!(
+            r#"
+            SELECT COUNT(*) as "count!" 
+            FROM products 
+            WHERE 
+                ($1::bool IS NULL OR is_active = $1)
+                AND ($2::uuid IS NULL OR category_id = $2)
+                AND ($3::numeric IS NULL OR price >= $3)
+                AND ($4::numeric IS NULL OR price <= $4)
+                AND (
+                    $5::text IS NULL 
+                    OR name ILIKE '%' || $5::text || '%' 
+                    OR description ILIKE '%' || $5::text || '%'
+                )
+            "#,
+            is_active,
+            category_id as Option<Uuid>,
+            min_price as Option<Decimal>,
+            max_price as Option<Decimal>,
+            search_pattern as Option<String>,
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(row.count)
+    }
     pub async fn find_all(pool: &PgPool) -> Result<Vec<Product>, AppError> {
         let products = sqlx::query_as!(
             Product,
@@ -307,6 +315,7 @@ impl ProductRepository {
         Ok(())
     }
 
+    
     pub async fn get_inventory_with_filters(
         pool: &PgPool,
         vendor_id: Option<Uuid>,
@@ -316,42 +325,39 @@ impl ProductRepository {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<(Product, Option<String>)>, AppError> {
-        let mut sql = String::from(
-            "SELECT 
+        let search_pattern = search.map(|s| format!("%{}%", s));
+        
+        let products = sqlx::query_as!(
+            Product,
+            r#"
+            SELECT 
                 p.id, p.name, p.slug, p.description, 
-                p.price, 
-                p.compare_at_price, 
+                p.price as "price: Decimal", 
+                p.compare_at_price as "compare_at_price: Decimal", 
                 p.stock_quantity, p.category_id, p.sku, p.is_active, p.image_url,
                 p.weight,
-                p.average_rating,
+                p.average_rating as "average_rating: Decimal",
                 p.total_reviews,
                 p.vendor_id,
                 p.created_at, p.updated_at
             FROM products p
-            WHERE 1=1"
-        );
-
-        if let Some(vid) = vendor_id {
-            sql.push_str(&format!(" AND p.vendor_id = '{}'", vid));
-        }
-
-        if low_stock_only {
-            sql.push_str(" AND p.stock_quantity <= 5 AND p.stock_quantity > 0");
-        }
-
-        if out_of_stock_only {
-            sql.push_str(" AND p.stock_quantity = 0");
-        }
-
-        if let Some(search_term) = search {
-            sql.push_str(&format!(" AND p.name ILIKE '%{}%'", search_term));
-        }
-
-        sql.push_str(&format!(" ORDER BY p.stock_quantity ASC LIMIT {} OFFSET {}", limit, offset));
-
-        let products = sqlx::query_as::<_, Product>(&sql)
-            .fetch_all(pool)
-            .await?;
+            WHERE 
+                ($1::uuid IS NULL OR p.vendor_id = $1)
+                AND ($2::bool IS FALSE OR p.stock_quantity <= 5 AND p.stock_quantity > 0)
+                AND ($3::bool IS FALSE OR p.stock_quantity = 0)
+                AND ($4::text IS NULL OR p.name ILIKE $4)
+            ORDER BY p.stock_quantity ASC 
+            LIMIT $5 OFFSET $6
+            "#,
+            vendor_id,
+            low_stock_only,
+            out_of_stock_only,
+            search_pattern,
+            limit,
+            offset
+        )
+        .fetch_all(pool)
+        .await?;
         
         let mut results = Vec::new();
         for product in products {
@@ -384,30 +390,26 @@ impl ProductRepository {
         out_of_stock_only: bool,
         search: Option<&str>,
     ) -> Result<i64, AppError> {
-        let mut sql = String::from(
-            "SELECT COUNT(*) as count FROM products p WHERE 1=1"
-        );
+        let search_pattern = search.map(|s| format!("%{}%", s));
 
-        if let Some(vid) = vendor_id {
-            sql.push_str(&format!(" AND p.vendor_id = '{}'", vid));
-        }
+        let row = sqlx::query!(
+            r#"
+            SELECT COUNT(*) as "count!"
+            FROM products p
+            WHERE 
+                ($1::uuid IS NULL OR p.vendor_id = $1)
+                AND ($2::bool IS FALSE OR p.stock_quantity <= 5 AND p.stock_quantity > 0)
+                AND ($3::bool IS FALSE OR p.stock_quantity = 0)
+                AND ($4::text IS NULL OR p.name ILIKE $4)
+            "#,
+            vendor_id,
+            low_stock_only,
+            out_of_stock_only,
+            search_pattern,
+        )
+        .fetch_one(pool)
+        .await?;
 
-        if low_stock_only {
-            sql.push_str(" AND p.stock_quantity <= 5 AND p.stock_quantity > 0");
-        }
-
-        if out_of_stock_only {
-            sql.push_str(" AND p.stock_quantity = 0");
-        }
-
-        if let Some(search_term) = search {
-            sql.push_str(&format!(" AND p.name ILIKE '%{}%'", search_term));
-        }
-
-        let count: i64 = sqlx::query_scalar(&sql)
-            .fetch_one(pool)
-            .await?;
-
-        Ok(count)
+        Ok(row.count)
     }
 }

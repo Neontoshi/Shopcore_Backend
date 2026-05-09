@@ -15,10 +15,9 @@ pub async fn list_products(
 ) -> Result<Json<PaginatedResponse<ProductResponse>>, AppError> {
     let page = params.page.unwrap_or(1);
     let page_size = params.page_size.unwrap_or(20);
-    let limit = page_size as i64;
+    let limit = params.limit.unwrap_or(page_size as i64);  // use limit if provided
     let offset = (page - 1) as i64 * limit;
     
-    // Only show active products to customers
     let is_active = Some(true);
     
     let products = ProductRepository::search(
@@ -28,11 +27,12 @@ pub async fn list_products(
         params.min_price,
         params.max_price,
         is_active,
+        params.sort.as_deref(),  // <-- PASS SORT
         limit,
         offset,
     ).await?;
     
-        let total = ProductRepository::count_search(
+    let total = ProductRepository::count_search(
         state.get_db_pool(),
         params.query.as_deref(),
         params.category_id,
@@ -45,7 +45,6 @@ pub async fn list_products(
     
     Ok(Json(PaginatedResponse::new(product_responses, total).with_pagination(page as i64, page_size as i64)))
 }
-
 pub async fn get_product(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -76,6 +75,7 @@ pub async fn get_featured_products(
         None,
         None,
         Some(true),
+        None,
         8,
         0,
     ).await?;
@@ -96,6 +96,7 @@ pub async fn search_products(
         None,
         None,
         Some(true),
+        None,
         20,
         0,
     ).await?;

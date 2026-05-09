@@ -64,6 +64,7 @@ pub struct ProductResponse {
     pub category: Option<CategoryInfo>,
 }
 
+
 #[derive(Debug, Serialize)]
 pub struct CategoryInfo {
     pub id: Uuid,
@@ -80,6 +81,8 @@ pub struct ProductFilter {
     pub is_active: Option<bool>,
     pub page: Option<usize>,
     pub page_size: Option<usize>,
+    pub sort: Option<String>,
+    pub limit: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

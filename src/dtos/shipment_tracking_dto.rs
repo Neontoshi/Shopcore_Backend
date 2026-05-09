@@ -15,3 +15,8 @@ pub struct TrackingResponse {
     pub tracking_number: Option<String>,
     pub tracking_url: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateEstimatedDeliveryRequest {
+    pub estimated_delivery: DateTime<Utc>,
+}

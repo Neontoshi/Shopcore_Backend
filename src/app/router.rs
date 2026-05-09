@@ -101,6 +101,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/orders/{order_id}/mark-paid", put(admin::mark_order_paid))
         .route("/api/admin/orders/{order_id}/tracking", post(admin::shipment_handler::add_tracking))
         .route("/api/admin/orders/{order_id}/delivered", put(admin::shipment_handler::mark_delivered))
+        .route("/api/admin/orders/{order_id}/estimated-delivery", put(admin::shipment_tracking_handler::update_estimated_delivery))
         // .layer(admin_limiter)  // COMMENTED OUT
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 

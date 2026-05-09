@@ -196,4 +196,26 @@ impl ShipmentTrackingService {
             _ => carrier.to_lowercase(),
         }
     }
+    // Update estimated delivery date
+    pub async fn update_estimated_delivery(
+        pool: &PgPool,
+        order_id: &Uuid,
+        estimated_delivery: DateTime<Utc>,
+    ) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            UPDATE orders 
+            SET estimated_delivery = $1,
+                updated_at = NOW()
+            WHERE id = $2
+            "#,
+            estimated_delivery,
+            order_id
+        )
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
+        
+        Ok(())
+    }
 }
