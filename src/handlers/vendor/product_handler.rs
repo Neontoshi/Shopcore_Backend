@@ -58,6 +58,7 @@ pub async fn get_my_products(
             updated_at: row.updated_at,
             weight: None,
             category: None,
+            images: vec![],
         }
     }).collect();
 
@@ -114,6 +115,25 @@ pub async fn create_product(
     .fetch_one(state.get_db_pool())
     .await?;
 
+    // Insert product images
+    if let Some(images) = &req.images {
+        for (i, img) in images.iter().enumerate() {
+            sqlx::query!(
+                r#"
+                INSERT INTO product_images (product_id, url, alt_text, display_order, is_primary)
+                VALUES ($1, $2, $3, $4, $5)
+                "#,
+                product_row.id,
+                img.url,
+                img.alt_text,
+                img.display_order.unwrap_or(i as i32),
+                img.is_primary.unwrap_or(i == 0),
+            )
+            .execute(state.get_db_pool())
+            .await?;
+        }
+    }
+
     let product = ProductResponse {
         id: product_row.id,
         name: product_row.name,
@@ -132,6 +152,7 @@ pub async fn create_product(
         updated_at: product_row.updated_at,
         weight: product_row.weight,
         category: None,
+        images: vec![],
     };
 
     Ok(Json(serde_json::json!({
@@ -139,7 +160,6 @@ pub async fn create_product(
         "product": product
     })))
 }
-
 pub async fn update_product(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -210,6 +230,7 @@ pub async fn update_product(
         updated_at: product_row.updated_at,
         weight: product_row.weight,
         category: None,
+        images: vec![],
     };
 
     Ok(Json(serde_json::json!({

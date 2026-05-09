@@ -27,6 +27,15 @@ pub struct CreateProductRequest {
     pub sku: Option<String>,
     pub image_url: Option<String>,
     pub weight: Option<Decimal>,
+    pub images: Option<Vec<ProductImageInput>>,   // <-- ADD THIS
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProductImageInput {
+    pub url: String,
+    pub alt_text: Option<String>,
+    pub display_order: Option<i32>,
+    pub is_primary: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -62,9 +71,17 @@ pub struct ProductResponse {
     pub updated_at: DateTime<Utc>,
     pub weight: Option<Decimal>,
     pub category: Option<CategoryInfo>,
+    pub images: Vec<ProductImageResponse>,
 }
 
-
+#[derive(Debug, Serialize)]
+pub struct ProductImageResponse {
+    pub id: Uuid,
+    pub url: String,
+    pub alt_text: Option<String>,
+    pub display_order: i32,
+    pub is_primary: bool,
+}
 #[derive(Debug, Serialize)]
 pub struct CategoryInfo {
     pub id: Uuid,
@@ -142,6 +159,18 @@ impl From<crate::models::Category> for CategoryResponse {
             image_url: c.image_url,
             display_order: c.display_order,
             weight: None,
+        }
+    }
+}
+
+impl From<crate::models::ProductImage> for ProductImageResponse {
+    fn from(img: crate::models::ProductImage) -> Self {
+        ProductImageResponse {
+            id: img.id,
+            url: img.url,
+            alt_text: img.alt_text,
+            display_order: img.display_order,
+            is_primary: img.is_primary,
         }
     }
 }

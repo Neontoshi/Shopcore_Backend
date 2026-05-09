@@ -82,6 +82,7 @@ impl ProductService {
             created_at: product.created_at,
             updated_at: product.updated_at,
             category,
+            images: vec![], // Images will be fetched separately in the handler
         })
     }
     
@@ -171,6 +172,7 @@ impl From<Product> for ProductResponse {
             created_at: product.created_at,
             updated_at: product.updated_at,
             category: None,
+            images: vec![],
         }
     }
 }

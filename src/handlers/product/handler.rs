@@ -52,7 +52,13 @@ pub async fn get_product(
     let product = ProductRepository::find_by_id(state.get_db_pool(), &id).await?
         .ok_or_else(|| AppError::not_found("Product"))?;
     
-    Ok(Json(ApiResponse::success(product.into())))
+    // Fetch images
+    let images = ProductRepository::get_product_images(state.get_db_pool(), &id).await?;
+    
+    let mut response: ProductResponse = product.into();
+    response.images = images.into_iter().map(|img| img.into()).collect();
+    
+    Ok(Json(ApiResponse::success(response)))
 }
 
 pub async fn list_categories(

@@ -412,4 +412,21 @@ impl ProductRepository {
 
         Ok(row.count)
     }
+    pub async fn get_product_images(pool: &PgPool,product_id: &Uuid,)
+     -> Result<Vec<crate::models::ProductImage>, AppError> {
+        let images = sqlx::query_as!(
+            crate::models::ProductImage,
+            r#"
+            SELECT id, product_id, url, alt_text, display_order, is_primary, created_at
+            FROM product_images
+            WHERE product_id = $1
+            ORDER BY display_order ASC, created_at ASC
+            "#,
+            product_id
+        )
+        .fetch_all(pool)
+        .await?;
+        
+        Ok(images)
+    }
 }

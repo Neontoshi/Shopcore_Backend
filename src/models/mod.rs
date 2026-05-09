@@ -7,6 +7,8 @@ pub mod order;
 pub mod password_reset;
 pub mod review;
 pub mod wishlist;
+pub mod product_image;
+
 
 pub use user::User;
 pub use address::{Address, SimpleAddress};
@@ -17,3 +19,4 @@ pub use order::{Order, OrderItem, OrderWithItems};
 pub use password_reset::PasswordReset;
 pub use review::{Review, ReviewReply};
 pub use wishlist::{Wishlist, WishlistItem};
+pub use product_image::ProductImage;
