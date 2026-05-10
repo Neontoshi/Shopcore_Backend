@@ -8,6 +8,7 @@ use crate::app::state::AppState;
 use crate::dtos::product_dto::{CreateProductRequest, UpdateProductRequest, ProductResponse};
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
+use crate::repositories::ProductRepository;
 
 pub async fn get_my_products(
     State(state): State<AppState>,
@@ -212,6 +213,37 @@ pub async fn update_product(
     .fetch_one(state.get_db_pool())
     .await?;
 
+    // If images were sent, delete old ones and insert new ones
+    if let Some(images) = &req.images {
+        // Delete existing images for this product
+        sqlx::query!(
+            "DELETE FROM product_images WHERE product_id = $1",
+            product_id
+        )
+        .execute(state.get_db_pool())
+        .await?;
+
+        // Insert new images
+        for (i, img) in images.iter().enumerate() {
+            sqlx::query!(
+                r#"
+                INSERT INTO product_images (product_id, url, alt_text, display_order, is_primary)
+                VALUES ($1, $2, $3, $4, $5)
+                "#,
+                product_id,
+                img.url,
+                img.alt_text,
+                img.display_order.unwrap_or(i as i32),
+                img.is_primary.unwrap_or(i == 0),
+            )
+            .execute(state.get_db_pool())
+            .await?;
+        }
+    }
+
+    // Fetch updated images
+    let updated_images = ProductRepository::get_product_images(state.get_db_pool(), &product_id).await?;
+
     let product = ProductResponse {
         id: product_row.id,
         name: product_row.name,
@@ -230,7 +262,7 @@ pub async fn update_product(
         updated_at: product_row.updated_at,
         weight: product_row.weight,
         category: None,
-        images: vec![],
+        images: updated_images.into_iter().map(|img| img.into()).collect(),
     };
 
     Ok(Json(serde_json::json!({

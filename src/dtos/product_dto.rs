@@ -50,6 +50,7 @@ pub struct UpdateProductRequest {
     pub is_active: Option<bool>,
     pub image_url: Option<String>,
     pub weight: Option<Decimal>,
+    pub images: Option<Vec<ProductImageInput>>,  // <-- ADD THIS
 }
 
 #[derive(Debug, Serialize)]

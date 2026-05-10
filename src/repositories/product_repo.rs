@@ -410,7 +410,7 @@ impl ProductRepository {
         .fetch_one(pool)
         .await?;
 
-        Ok(row.count
+        Ok(row.count)
     }
     pub async fn get_product_images(pool: &PgPool,product_id: &Uuid,)
      -> Result<Vec<crate::models::ProductImage>, AppError> {
