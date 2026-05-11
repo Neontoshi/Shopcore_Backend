@@ -4,7 +4,7 @@ use crate::app::state::AppState;
 use crate::app::router::create_router;
 use crate::services::AlertService;
 use crate::middleware::security_headers::security_headers_middleware;
-use crate::middleware::logging::logging_middleware;
+//use crate::middleware::logging::logging_middleware;
 use tower_http::trace::TraceLayer;
 use std::net::SocketAddr;
 use sqlx::PgPool;
@@ -56,7 +56,7 @@ pub async fn start_server(config: AppConfig, db_pool: PgPool) -> anyhow::Result<
 
     let app = create_router(state)
         .layer(middleware::from_fn(security_headers_middleware))
-        .layer(middleware::from_fn(logging_middleware))
+        //.layer(middleware::from_fn(logging_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(configure_cors());
 

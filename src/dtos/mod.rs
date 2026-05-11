@@ -10,7 +10,7 @@ pub mod review_dto;
 pub mod shipping_settings_dto;
 pub mod vendor_dto;
 pub mod wishlist_dto;
-
+pub mod platform_settings_dto;
 
 pub use auth_dto::*;
 pub use user_dto::*;

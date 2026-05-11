@@ -43,6 +43,7 @@ pub async fn stripe_webhook(
                 let order_uuid = order_id.parse::<uuid::Uuid>()
                     .map_err(|_| AppError::bad_request("Invalid order_id in metadata"))?;
 
+                // Update payment transaction
                 sqlx::query!(
                     "UPDATE payment_transactions SET status = 'completed', updated_at = NOW()
                      WHERE order_id = $1 AND provider_transaction_id = $2",
@@ -52,6 +53,7 @@ pub async fn stripe_webhook(
                 .execute(state.get_db_pool())
                 .await?;
 
+                // Update order status
                 sqlx::query!(
                     "UPDATE orders SET payment_status = 'paid', status = 'confirmed', updated_at = NOW()
                      WHERE id = $1",
@@ -59,6 +61,30 @@ pub async fn stripe_webhook(
                 )
                 .execute(state.get_db_pool())
                 .await?;
+
+                // Clear the user's cart
+                let cart_cleared = sqlx::query!(
+                    r#"
+                    DELETE FROM cart_items 
+                    WHERE cart_id IN (
+                        SELECT c.id FROM carts c
+                        JOIN orders o ON c.user_id = o.user_id
+                        WHERE o.id = $1
+                        AND c.expires_at > NOW()
+                        ORDER BY c.created_at DESC
+                        LIMIT 1
+                    )
+                    "#,
+                    order_uuid
+                )
+                .execute(state.get_db_pool())
+                .await;
+
+                if let Ok(result) = cart_cleared {
+                    tracing::info!("Cart cleared for order {}: {} items removed", order_uuid, result.rows_affected());
+                } else {
+                    tracing::warn!("Failed to clear cart for order {}", order_uuid);
+                }
             }
         }
 
@@ -93,6 +119,42 @@ pub async fn stripe_webhook(
                 )
                 .execute(state.get_db_pool())
                 .await?;
+
+                let cancel_result = sqlx::query!(
+                    "SELECT user_id FROM orders WHERE id = $1",
+                    order_uuid
+                )
+                .fetch_optional(state.get_db_pool())
+                .await;
+
+                if let Ok(Some(_order)) = cancel_result {
+                    // Restore stock from order items
+                    let items = sqlx::query!(
+                        "SELECT product_id, quantity FROM order_items WHERE order_id = $1",
+                        order_uuid
+                    )
+                    .fetch_all(state.get_db_pool())
+                    .await;
+
+                    if let Ok(items) = items {
+                        for item in items {
+                            let _ = sqlx::query!(
+                                "UPDATE products SET stock_quantity = stock_quantity + $1, updated_at = NOW() WHERE id = $2",
+                                item.quantity,
+                                item.product_id
+                            )
+                            .execute(state.get_db_pool())
+                            .await;
+                        }
+                    }
+
+                    let _ = sqlx::query!(
+                        "UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1",
+                        order_uuid
+                    )
+                    .execute(state.get_db_pool())
+                    .await;
+                }
             }
         }
 

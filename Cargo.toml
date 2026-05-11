@@ -83,6 +83,7 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 governor = "0.10.4"
+cargo-watch = "8.5.3"
 
 [dev-dependencies]
 #  Testing 

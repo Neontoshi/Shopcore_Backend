@@ -33,7 +33,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/categories", get(product::list_categories))
         .route("/api/shipping/settings", get(admin::get_shipping_settings))
         .route("/api/reviews/product/{product_id}", get(review::get_product_reviews))
-        .route("/api/reviews/{review_id}/replies", get(review::get_review_replies));
+        .route("/api/reviews/{review_id}/replies", get(review::get_review_replies))
+        .route("/api/settings/platform-fee", get(admin::get_platform_settings));
         // .layer(rate_limiter);  // COMMENTED OUT
 
     let auth_routes = Router::new()
@@ -102,6 +103,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/admin/orders/{order_id}/tracking", post(admin::shipment_handler::add_tracking))
         .route("/api/admin/orders/{order_id}/delivered", put(admin::shipment_handler::mark_delivered))
         .route("/api/admin/orders/{order_id}/estimated-delivery", put(admin::shipment_tracking_handler::update_estimated_delivery))
+        .route("/api/admin/settings/platform-fee", put(admin::update_platform_settings))
         // .layer(admin_limiter)  // COMMENTED OUT
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 

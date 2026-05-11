@@ -6,6 +6,9 @@ use uuid::Uuid;
 use crate::app::state::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
+use rust_decimal::Decimal;
+use crate::dtos::platform_settings_dto::{PlatformSettingsResponse, UpdatePlatformSettingsRequest};
+
 
 // Admin: Get dashboard statistics
 pub async fn get_stats(
@@ -40,10 +43,67 @@ pub async fn get_stats(
         .count
         .unwrap_or(0);
 
-    let revenue_result = sqlx::query!("SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE payment_status = 'paid'")
-        .fetch_one(state.get_db_pool())
-        .await?;
-    let total_revenue = revenue_result.total.unwrap_or(Default::default());
+    // Get platform fee percent
+    let fee_settings = sqlx::query!(
+        "SELECT platform_fee_percent FROM platform_settings WHERE is_active = true ORDER BY created_at DESC LIMIT 1"
+    )
+    .fetch_one(state.get_db_pool())
+    .await?;
+    let fee_percent = fee_settings.platform_fee_percent;
+    let fee_multiplier = fee_percent / Decimal::new(100, 0);
+
+    // Get shipping, tax, and subtotal from paid orders
+    let earnings = sqlx::query!(
+        r#"
+        SELECT 
+            COALESCE(SUM(shipping_cost), 0) as total_shipping,
+            COALESCE(SUM(tax), 0) as total_tax,
+            COALESCE(SUM(subtotal), 0) as total_subtotal
+        FROM orders 
+        WHERE payment_status = 'paid'
+        "#
+    )
+    .fetch_one(state.get_db_pool())
+    .await?;
+
+    let total_shipping = earnings.total_shipping.unwrap_or(Decimal::ZERO);
+    let total_tax = earnings.total_tax.unwrap_or(Decimal::ZERO);
+    let total_subtotal = earnings.total_subtotal.unwrap_or(Decimal::ZERO);
+
+    // Platform profit = fee% of subtotal
+    let platform_profit = total_subtotal * fee_multiplier;
+
+    // Total platform revenue = profit + shipping + tax
+    let platform_revenue = platform_profit + total_shipping + total_tax;
+
+    // Payment method breakdown
+    let payment_breakdown = sqlx::query!(
+        r#"
+        SELECT 
+            payment_method,
+            COUNT(*) as "count!",
+            COALESCE(SUM(shipping_cost), 0) as shipping,
+            COALESCE(SUM(tax), 0) as tax,
+            COALESCE(SUM(subtotal), 0) as subtotal
+        FROM orders 
+        WHERE payment_status = 'paid'
+        GROUP BY payment_method
+        "#
+    )
+    .fetch_all(state.get_db_pool())
+    .await?;
+
+    let breakdown: Vec<serde_json::Value> = payment_breakdown.iter().map(|row| {
+        let fee_profit = row.subtotal.unwrap_or(Decimal::ZERO) * fee_multiplier;
+        serde_json::json!({
+            "payment_method": row.payment_method,
+            "order_count": row.count,
+            "shipping": row.shipping,
+            "tax": row.tax,
+            "fee_profit": fee_profit,
+            "total": (row.shipping.unwrap_or(Decimal::ZERO) + row.tax.unwrap_or(Decimal::ZERO) + fee_profit)
+        })
+    }).collect();
 
     let pending_apps = sqlx::query!("SELECT COUNT(*) as count FROM vendor_applications WHERE status = 'pending'")
         .fetch_one(state.get_db_pool())
@@ -56,7 +116,12 @@ pub async fn get_stats(
         "total_vendors": total_vendors,
         "total_products": total_products,
         "total_orders": total_orders,
-        "total_revenue": total_revenue,
+        "platform_revenue": platform_revenue,
+        "total_shipping": total_shipping,
+        "total_tax": total_tax,
+        "platform_profit": platform_profit,
+        "fee_percent": fee_percent,
+        "payment_breakdown": breakdown,
         "pending_applications": pending_apps
     })))
 }
@@ -450,3 +515,59 @@ pub async fn get_low_stock_summary(
         "products": low_stock_products
     })))
 }
+
+    // Admin: Get platform fee settings (public)
+    pub async fn get_platform_settings(
+        State(state): State<AppState>,
+    ) -> Result<Json<PlatformSettingsResponse>, AppError> {
+        let settings = sqlx::query!(
+            r#"
+            SELECT platform_fee_percent, updated_at
+            FROM platform_settings
+            WHERE is_active = true
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#
+        )
+        .fetch_one(state.get_db_pool())
+        .await?;
+    
+        Ok(Json(PlatformSettingsResponse {
+            platform_fee_percent: settings.platform_fee_percent,
+            updated_at: settings.updated_at.unwrap_or_else(chrono::Utc::now),
+        }))
+    }
+    
+    // Admin: Update platform fee settings
+    pub async fn update_platform_settings(
+        State(state): State<AppState>,
+        Extension(auth_user): Extension<AuthUser>,
+        Json(req): Json<UpdatePlatformSettingsRequest>,
+    ) -> Result<Json<serde_json::Value>, AppError> {
+        if !auth_user.role.can_access_admin() {
+            return Err(AppError::forbidden("Admin access required"));
+        }
+    
+        if req.platform_fee_percent < Decimal::ZERO || req.platform_fee_percent > Decimal::new(10000, 2) {
+            return Err(AppError::bad_request("Fee must be between 0 and 100%"));
+        }
+    
+        // Deactivate old
+        sqlx::query!("UPDATE platform_settings SET is_active = false WHERE is_active = true")
+            .execute(state.get_db_pool())
+            .await?;
+    
+        // Insert new
+        sqlx::query!(
+            "INSERT INTO platform_settings (platform_fee_percent, updated_by) VALUES ($1, $2)",
+            req.platform_fee_percent,
+            auth_user.user_id
+        )
+        .execute(state.get_db_pool())
+        .await?;
+    
+        Ok(Json(serde_json::json!({
+            "message": "Platform fee updated",
+            "platform_fee_percent": req.platform_fee_percent
+        })))
+    }
