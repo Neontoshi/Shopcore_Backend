@@ -1,12 +1,12 @@
+use crate::app::state::AppState;
+use crate::errors::AppError;
 use axum::{
-    extract::{State, Request},
-    http::StatusCode,
     body::to_bytes,
+    extract::{Request, State},
+    http::StatusCode,
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use crate::app::state::AppState;
-use crate::errors::AppError;
 
 pub async fn stripe_webhook(
     State(state): State<AppState>,
@@ -25,22 +25,21 @@ pub async fn stripe_webhook(
 
     verify_stripe_signature(&body_bytes, &signature, &state.config.stripe_webhook_secret)?;
 
-    let event: serde_json::Value = serde_json::from_slice(&body_bytes)
-        .map_err(|_| AppError::bad_request("Invalid JSON"))?;
+    let event: serde_json::Value =
+        serde_json::from_slice(&body_bytes).map_err(|_| AppError::bad_request("Invalid JSON"))?;
 
     let event_type = event["type"].as_str().unwrap_or("");
 
     match event_type {
         "payment_intent.succeeded" => {
-            let payment_intent_id = event["data"]["object"]["id"]
-                .as_str()
-                .unwrap_or("");
+            let payment_intent_id = event["data"]["object"]["id"].as_str().unwrap_or("");
             let order_id = event["data"]["object"]["metadata"]["order_id"]
                 .as_str()
                 .unwrap_or("");
 
             if !order_id.is_empty() && !payment_intent_id.is_empty() {
-                let order_uuid = order_id.parse::<uuid::Uuid>()
+                let order_uuid = order_id
+                    .parse::<uuid::Uuid>()
                     .map_err(|_| AppError::bad_request("Invalid order_id in metadata"))?;
 
                 // Update payment transaction
@@ -65,7 +64,7 @@ pub async fn stripe_webhook(
                 // Clear the user's cart
                 let cart_cleared = sqlx::query!(
                     r#"
-                    DELETE FROM cart_items 
+                    DELETE FROM cart_items
                     WHERE cart_id IN (
                         SELECT c.id FROM carts c
                         JOIN orders o ON c.user_id = o.user_id
@@ -81,17 +80,65 @@ pub async fn stripe_webhook(
                 .await;
 
                 if let Ok(result) = cart_cleared {
-                    tracing::info!("Cart cleared for order {}: {} items removed", order_uuid, result.rows_affected());
-                } else {
-                    tracing::warn!("Failed to clear cart for order {}", order_uuid);
+                    tracing::info!(
+                        "Cart cleared for order {}: {} items removed",
+                        order_uuid,
+                        result.rows_affected()
+                    );
                 }
+
+                // Send order confirmation email
+                let email_service = state.get_email_service().clone();
+                let pool = state.get_db_pool().clone();
+                let email_order_id = order_uuid;
+
+                tokio::spawn(async move {
+                    use crate::repositories::{AddressRepository, OrderRepository};
+
+                    let order = OrderRepository::find_by_id(&pool, &email_order_id).await;
+                    let items = match &order {
+                        Ok(Some(o)) => OrderRepository::get_order_items(&pool, &o.id).await,
+                        _ => Ok(vec![]),
+                    };
+                    let shipping_addr = match &order {
+                        Ok(Some(o)) => AddressRepository::find_by_id(&pool, &o.shipping_address_id)
+                            .await
+                            .unwrap_or(None),
+                        _ => None,
+                    };
+
+                    if let (Ok(Some(order)), Ok(items), Some(address)) =
+                        (order, items, shipping_addr)
+                    {
+                        // Get user email
+                        if let Ok(Some(user)) =
+                            sqlx::query!("SELECT email FROM users WHERE id = $1", order.user_id)
+                                .fetch_optional(&pool)
+                                .await
+                        {
+                            if let Err(e) = email_service
+                                .send_order_confirmation(&user.email, &order, &items, &address)
+                                .await
+                            {
+                                tracing::error!(
+                                    "Failed to send order confirmation for {}: {}",
+                                    order.order_number,
+                                    e
+                                );
+                            } else {
+                                tracing::info!(
+                                    "Order confirmation email sent for {}",
+                                    order.order_number
+                                );
+                            }
+                        }
+                    }
+                });
             }
         }
 
         "payment_intent.payment_failed" => {
-            let payment_intent_id = event["data"]["object"]["id"]
-                .as_str()
-                .unwrap_or("");
+            let payment_intent_id = event["data"]["object"]["id"].as_str().unwrap_or("");
             let failure_reason = event["data"]["object"]["last_payment_error"]["message"]
                 .as_str()
                 .unwrap_or("Payment failed");
@@ -100,7 +147,8 @@ pub async fn stripe_webhook(
                 .unwrap_or("");
 
             if !order_id.is_empty() {
-                let order_uuid = order_id.parse::<uuid::Uuid>()
+                let order_uuid = order_id
+                    .parse::<uuid::Uuid>()
                     .map_err(|_| AppError::bad_request("Invalid order_id in metadata"))?;
 
                 sqlx::query!(
@@ -120,12 +168,10 @@ pub async fn stripe_webhook(
                 .execute(state.get_db_pool())
                 .await?;
 
-                let cancel_result = sqlx::query!(
-                    "SELECT user_id FROM orders WHERE id = $1",
-                    order_uuid
-                )
-                .fetch_optional(state.get_db_pool())
-                .await;
+                let cancel_result =
+                    sqlx::query!("SELECT user_id FROM orders WHERE id = $1", order_uuid)
+                        .fetch_optional(state.get_db_pool())
+                        .await;
 
                 if let Ok(Some(_order)) = cancel_result {
                     // Restore stock from order items

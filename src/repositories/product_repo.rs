@@ -1,8 +1,8 @@
+use crate::errors::AppError;
+use crate::models::Product;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
-use rust_decimal::Decimal;
-use crate::models::Product;
-use crate::errors::AppError;
 
 pub struct ProductRepository;
 
@@ -11,7 +11,7 @@ impl ProductRepository {
         sqlx::query!(
             r#"
             INSERT INTO products (
-                id, name, slug, description, price, compare_at_price, 
+                id, name, slug, description, price, compare_at_price,
                 stock_quantity, category_id, sku, is_active, image_url,
                 average_rating, total_reviews, created_at, updated_at
             )
@@ -42,10 +42,10 @@ impl ProductRepository {
         let product = sqlx::query_as!(
             Product,
             r#"
-            SELECT 
-                id, name, slug, description, 
-                price as "price: Decimal", 
-                compare_at_price as "compare_at_price: Decimal", 
+            SELECT
+                id, name, slug, description,
+                price as "price: Decimal",
+                compare_at_price as "compare_at_price: Decimal",
                 stock_quantity, category_id, sku, is_active, image_url,
                 weight,
                 average_rating as "average_rating: Decimal",
@@ -66,10 +66,10 @@ impl ProductRepository {
         let product = sqlx::query_as!(
             Product,
             r#"
-            SELECT 
-                id, name, slug, description, 
-                price as "price: Decimal", 
-                compare_at_price as "compare_at_price: Decimal", 
+            SELECT
+                id, name, slug, description,
+                price as "price: Decimal",
+                compare_at_price as "compare_at_price: Decimal",
                 stock_quantity, category_id, sku, is_active, image_url,
                 weight,
                 average_rating as "average_rating: Decimal",
@@ -122,38 +122,38 @@ impl ProductRepository {
             .await?;
         Ok(())
     }
-        pub async fn search(
-    pool: &PgPool,
-    query: Option<&str>,
-    category_id: Option<Uuid>,
-    min_price: Option<Decimal>,
-    max_price: Option<Decimal>,
-    is_active: Option<bool>,
-    sort: Option<&str>,           // <-- ADD THIS PARAMETER
-    limit: i64,
-    offset: i64,
-) -> Result<Vec<Product>, AppError> {
-    let search_pattern = query.map(|q| format!("%{}%", q));
-    
-    // Determine ORDER BY based on sort
-    let order_clause = match sort {
-        Some("popular") => "ORDER BY total_reviews DESC NULLS LAST, created_at DESC",
-        Some("rating") => "ORDER BY average_rating DESC NULLS LAST, created_at DESC",
-        Some("price_asc") => "ORDER BY price ASC, created_at DESC",
-        Some("price_desc") => "ORDER BY price DESC, created_at DESC",
-        _ => "ORDER BY created_at DESC",  // newest (default)
-    };
+    pub async fn search(
+        pool: &PgPool,
+        query: Option<&str>,
+        category_id: Option<Uuid>,
+        min_price: Option<Decimal>,
+        max_price: Option<Decimal>,
+        is_active: Option<bool>,
+        sort: Option<&str>, // <-- ADD THIS PARAMETER
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Product>, AppError> {
+        let search_pattern = query.map(|q| format!("%{}%", q));
 
-    let sql = format!(
-        r#"
-        SELECT 
-            id, name, slug, description, 
+        // Determine ORDER BY based on sort
+        let order_clause = match sort {
+            Some("popular") => "ORDER BY total_reviews DESC NULLS LAST, created_at DESC",
+            Some("rating") => "ORDER BY average_rating DESC NULLS LAST, created_at DESC",
+            Some("price_asc") => "ORDER BY price ASC, created_at DESC",
+            Some("price_desc") => "ORDER BY price DESC, created_at DESC",
+            _ => "ORDER BY created_at DESC", // newest (default)
+        };
+
+        let sql = format!(
+            r#"
+        SELECT
+            id, name, slug, description,
             price, compare_at_price, weight,
             stock_quantity, category_id, sku, is_active, image_url,
             average_rating, total_reviews, vendor_id,
             created_at, updated_at
-        FROM products 
-        WHERE 
+        FROM products
+        WHERE
             ($1::bool IS NULL OR is_active = $1)
             AND ($2::uuid IS NULL OR category_id = $2)
             AND ($3::numeric IS NULL OR price >= $3)
@@ -162,21 +162,21 @@ impl ProductRepository {
         {order_clause}
         LIMIT $6 OFFSET $7
         "#
-    );
+        );
 
-    let products = sqlx::query_as::<_, Product>(&sql)
-        .bind(is_active)
-        .bind(category_id)
-        .bind(min_price)
-        .bind(max_price)
-        .bind(search_pattern)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-    
-    Ok(products)
-}
+        let products = sqlx::query_as::<_, Product>(&sql)
+            .bind(is_active)
+            .bind(category_id)
+            .bind(min_price)
+            .bind(max_price)
+            .bind(search_pattern)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?;
+
+        Ok(products)
+    }
 
     pub async fn count_search(
         pool: &PgPool,
@@ -190,16 +190,16 @@ impl ProductRepository {
 
         let row = sqlx::query!(
             r#"
-            SELECT COUNT(*) as "count!" 
-            FROM products 
-            WHERE 
+            SELECT COUNT(*) as "count!"
+            FROM products
+            WHERE
                 ($1::bool IS NULL OR is_active = $1)
                 AND ($2::uuid IS NULL OR category_id = $2)
                 AND ($3::numeric IS NULL OR price >= $3)
                 AND ($4::numeric IS NULL OR price <= $4)
                 AND (
-                    $5::text IS NULL 
-                    OR name ILIKE '%' || $5::text || '%' 
+                    $5::text IS NULL
+                    OR name ILIKE '%' || $5::text || '%'
                     OR description ILIKE '%' || $5::text || '%'
                 )
             "#,
@@ -214,14 +214,71 @@ impl ProductRepository {
 
         Ok(row.count)
     }
+
+    pub async fn get_inventory_logs(
+        pool: &PgPool,
+        product_id: &Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<serde_json::Value>, AppError> {
+        let logs = sqlx::query!(
+            r#"
+            SELECT
+                il.id, il.quantity_change, il.old_quantity, il.new_quantity,
+                il.reason, il.created_at,
+                COALESCE(u.first_name || ' ' || u.last_name, 'System') as created_by_name
+            FROM inventory_logs il
+            LEFT JOIN users u ON il.created_by = u.id
+            WHERE il.product_id = $1
+            ORDER BY il.created_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+            product_id,
+            limit,
+            offset
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let result: Vec<serde_json::Value> = logs
+            .into_iter()
+            .map(|log| {
+                serde_json::json!({
+                    "id": log.id,
+                    "quantity_change": log.quantity_change,
+                    "old_quantity": log.old_quantity,
+                    "new_quantity": log.new_quantity,
+                    "reason": log.reason,
+                    "created_by": log.created_by_name,
+                    "created_at": log.created_at,
+                })
+            })
+            .collect();
+
+        Ok(result)
+    }
+
+    pub async fn count_inventory_logs(pool: &PgPool, product_id: &Uuid) -> Result<i64, AppError> {
+        let count = sqlx::query!(
+            "SELECT COUNT(*) as count FROM inventory_logs WHERE product_id = $1",
+            product_id
+        )
+        .fetch_one(pool)
+        .await?
+        .count
+        .unwrap_or(0);
+
+        Ok(count)
+    }
+
     pub async fn find_all(pool: &PgPool) -> Result<Vec<Product>, AppError> {
         let products = sqlx::query_as!(
             Product,
             r#"
-            SELECT 
-                id, name, slug, description, 
-                price as "price: Decimal", 
-                compare_at_price as "compare_at_price: Decimal", 
+            SELECT
+                id, name, slug, description,
+                price as "price: Decimal",
+                compare_at_price as "compare_at_price: Decimal",
                 stock_quantity, category_id, sku, is_active, image_url,
                 weight,
                 average_rating as "average_rating: Decimal",
@@ -237,7 +294,11 @@ impl ProductRepository {
         Ok(products)
     }
 
-    pub async fn update_stock<'a, E>(executor: E, product_id: &Uuid, quantity: i32) -> Result<(), AppError>
+    pub async fn update_stock<'a, E>(
+        executor: E,
+        product_id: &Uuid,
+        quantity: i32,
+    ) -> Result<(), AppError>
     where
         E: sqlx::Executor<'a, Database = sqlx::Postgres>,
     {
@@ -263,10 +324,10 @@ impl ProductRepository {
         let product = sqlx::query_as!(
             Product,
             r#"
-            SELECT 
-                id, name, slug, description, 
-                price as "price: Decimal", 
-                compare_at_price as "compare_at_price: Decimal", 
+            SELECT
+                id, name, slug, description,
+                price as "price: Decimal",
+                compare_at_price as "compare_at_price: Decimal",
                 stock_quantity, category_id, sku, is_active, image_url,
                 weight,
                 average_rating as "average_rating: Decimal",
@@ -315,7 +376,6 @@ impl ProductRepository {
         Ok(())
     }
 
-    
     pub async fn get_inventory_with_filters(
         pool: &PgPool,
         vendor_id: Option<Uuid>,
@@ -326,14 +386,14 @@ impl ProductRepository {
         offset: i64,
     ) -> Result<Vec<(Product, Option<String>)>, AppError> {
         let search_pattern = search.map(|s| format!("%{}%", s));
-        
+
         let products = sqlx::query_as!(
             Product,
             r#"
-            SELECT 
-                p.id, p.name, p.slug, p.description, 
-                p.price as "price: Decimal", 
-                p.compare_at_price as "compare_at_price: Decimal", 
+            SELECT
+                p.id, p.name, p.slug, p.description,
+                p.price as "price: Decimal",
+                p.compare_at_price as "compare_at_price: Decimal",
                 p.stock_quantity, p.category_id, p.sku, p.is_active, p.image_url,
                 p.weight,
                 p.average_rating as "average_rating: Decimal",
@@ -341,12 +401,12 @@ impl ProductRepository {
                 p.vendor_id,
                 p.created_at, p.updated_at
             FROM products p
-            WHERE 
+            WHERE
                 ($1::uuid IS NULL OR p.vendor_id = $1)
                 AND ($2::bool IS FALSE OR p.stock_quantity <= 5 AND p.stock_quantity > 0)
                 AND ($3::bool IS FALSE OR p.stock_quantity = 0)
                 AND ($4::text IS NULL OR p.name ILIKE $4)
-            ORDER BY p.stock_quantity ASC 
+            ORDER BY p.stock_quantity ASC
             LIMIT $5 OFFSET $6
             "#,
             vendor_id,
@@ -358,7 +418,7 @@ impl ProductRepository {
         )
         .fetch_all(pool)
         .await?;
-        
+
         let mut results = Vec::new();
         for product in products {
             let vendor_name: Option<String> = if let Some(vendor_id) = product.vendor_id {
@@ -396,7 +456,7 @@ impl ProductRepository {
             r#"
             SELECT COUNT(*) as "count!"
             FROM products p
-            WHERE 
+            WHERE
                 ($1::uuid IS NULL OR p.vendor_id = $1)
                 AND ($2::bool IS FALSE OR p.stock_quantity <= 5 AND p.stock_quantity > 0)
                 AND ($3::bool IS FALSE OR p.stock_quantity = 0)
@@ -412,8 +472,10 @@ impl ProductRepository {
 
         Ok(row.count)
     }
-    pub async fn get_product_images(pool: &PgPool,product_id: &Uuid,)
-     -> Result<Vec<crate::models::ProductImage>, AppError> {
+    pub async fn get_product_images(
+        pool: &PgPool,
+        product_id: &Uuid,
+    ) -> Result<Vec<crate::models::ProductImage>, AppError> {
         let images = sqlx::query_as!(
             crate::models::ProductImage,
             r#"
@@ -426,7 +488,7 @@ impl ProductRepository {
         )
         .fetch_all(pool)
         .await?;
-        
+
         Ok(images)
     }
 }

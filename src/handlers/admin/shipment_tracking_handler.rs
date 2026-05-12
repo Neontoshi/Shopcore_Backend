@@ -1,19 +1,17 @@
-use axum::{
-    extract::{Path, State},
-    Extension,
-    Json,
-};
-use uuid::Uuid;
-use sqlx::FromRow;
 use crate::app::state::AppState;
 use crate::dtos::shipment_tracking_dto::*;
 use crate::errors::AppError;
-use crate::services::shipment_tracking_service::ShipmentTrackingService;
 use crate::middleware::auth::AuthUser;
+use crate::services::shipment_tracking_service::ShipmentTrackingService;
+use axum::{
+    extract::{Path, State},
+    Extension, Json,
+};
+use sqlx::FromRow;
+use uuid::Uuid;
 
 #[derive(FromRow)]
 struct OrderDetails {
-    user_id: Uuid,
     order_number: String,
     user_email: String,
     first_name: Option<String>,
@@ -28,15 +26,16 @@ pub async fn add_tracking(
     Json(req): Json<AddTrackingRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if !auth_user.role.can_access_admin() {
-        return Err(AppError::forbidden("Only admins can add tracking information"));
+        return Err(AppError::forbidden(
+            "Only admins can add tracking information",
+        ));
     }
 
     // Get order details and user info for email
     let order_info = sqlx::query_as!(
         OrderDetails,
         r#"
-        SELECT 
-            o.user_id as "user_id",
+        SELECT
             o.order_number as "order_number",
             u.email as "user_email",
             u.first_name as "first_name",
@@ -61,7 +60,8 @@ pub async fn add_tracking(
         &req.carrier,
         req.estimated_delivery,
         true,
-    ).await?;
+    )
+    .await?;
 
     // Build customer name for email personalization
     let customer_name = match (order_info.first_name, order_info.last_name) {
@@ -69,33 +69,45 @@ pub async fn add_tracking(
         (Some(first), None) => first,
         _ => "Valued Customer".to_string(),
     };
-    
+
     // Generate tracking URL
-    let tracking_url = ShipmentTrackingService::generate_tracking_url(&req.carrier, &req.tracking_number);
-    
+    let tracking_url =
+        ShipmentTrackingService::generate_tracking_url(&req.carrier, &req.tracking_number);
+
     // Send personalized shipment notification email
     let email_service = state.get_email_service();
-    
+
     // Use the enhanced shipment notification method
-    if let Err(e) = email_service.send_shipment_notification(
-        &order_info.user_email,
-        &customer_name,
-        &order_info.order_number,
-        &req.tracking_number,
-        &req.carrier,
-        &tracking_url,
-        req.estimated_delivery,
-    ).await {
-        tracing::error!("Failed to send shipment notification to {}: {}", order_info.user_email, e);
+    if let Err(e) = email_service
+        .send_shipment_notification(
+            &order_info.user_email,
+            &customer_name,
+            &order_info.order_number,
+            &req.tracking_number,
+            &req.carrier,
+            &tracking_url,
+            req.estimated_delivery,
+        )
+        .await
+    {
+        tracing::error!(
+            "Failed to send shipment notification to {}: {}",
+            order_info.user_email,
+            e
+        );
     } else {
-        tracing::info!("Shipment notification sent to {} for order {}", customer_name, order_info.order_number);
+        tracing::info!(
+            "Shipment notification sent to {} for order {}",
+            customer_name,
+            order_info.order_number
+        );
     }
 
     // Audit log: Record which admin added tracking
     // Note: You need to create the admin_audit_logs table first
     let _ = sqlx::query!(
         r#"
-        INSERT INTO admin_audit_logs (admin_id, action, order_id, created_at) 
+        INSERT INTO admin_audit_logs (admin_id, action, order_id, created_at)
         VALUES ($1, 'add_tracking', $2, NOW())
         "#,
         auth_user.user_id,
@@ -123,15 +135,18 @@ pub async fn update_estimated_delivery(
     Json(req): Json<UpdateEstimatedDeliveryRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if !auth_user.role.can_access_admin() {
-        return Err(AppError::forbidden("Only admins can update estimated delivery"));
+        return Err(AppError::forbidden(
+            "Only admins can update estimated delivery",
+        ));
     }
-    
+
     ShipmentTrackingService::update_estimated_delivery(
         state.get_db_pool(),
         &order_id,
         req.estimated_delivery,
-    ).await?;
-    
+    )
+    .await?;
+
     Ok(Json(serde_json::json!({
         "success": true,
         "message": "Estimated delivery date updated",
@@ -146,7 +161,9 @@ pub async fn mark_delivered(
     Path(order_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if !auth_user.role.can_access_admin() {
-        return Err(AppError::forbidden("Only admins can mark orders as delivered"));
+        return Err(AppError::forbidden(
+            "Only admins can mark orders as delivered",
+        ));
     }
 
     // Get customer info before updating
@@ -168,7 +185,7 @@ pub async fn mark_delivered(
     // Audit log: Record which admin marked as delivered
     let _ = sqlx::query!(
         r#"
-        INSERT INTO admin_audit_logs (admin_id, action, order_id, created_at) 
+        INSERT INTO admin_audit_logs (admin_id, action, order_id, created_at)
         VALUES ($1, 'mark_delivered', $2, NOW())
         "#,
         auth_user.user_id,
@@ -185,15 +202,17 @@ pub async fn mark_delivered(
             (Some(first), None) => first,
             _ => "Customer".to_string(),
         };
-        
+
         // Send delivery confirmation using the enhanced method
-        let _ = email_service.send_delivery_confirmation(
-            &customer.email,
-            &customer_name,
-            &customer.order_number,
-        ).await;
-        
-        tracing::info!("Delivery confirmation sent to {} for order {}", customer_name, customer.order_number);
+        let _ = email_service
+            .send_delivery_confirmation(&customer.email, &customer_name, &customer.order_number)
+            .await;
+
+        tracing::info!(
+            "Delivery confirmation sent to {} for order {}",
+            customer_name,
+            customer.order_number
+        );
     }
 
     Ok(Json(serde_json::json!({
@@ -201,5 +220,4 @@ pub async fn mark_delivered(
         "message": "Order marked as delivered and customer notified",
         "order_id": order_id.to_string()
     })))
-
 }

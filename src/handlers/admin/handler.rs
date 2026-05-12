@@ -1,14 +1,14 @@
-use axum::{
-    extract::{State, Path, Extension, Query},
-    Json,
-};
-use uuid::Uuid;
 use crate::app::state::AppState;
+use crate::dtos::platform_settings_dto::{PlatformSettingsResponse, UpdatePlatformSettingsRequest};
 use crate::errors::AppError;
 use crate::middleware::auth::AuthUser;
+use crate::repositories::ProductRepository;
+use axum::{
+    extract::{Extension, Path, Query, State},
+    Json,
+};
 use rust_decimal::Decimal;
-use crate::dtos::platform_settings_dto::{PlatformSettingsResponse, UpdatePlatformSettingsRequest};
-
+use uuid::Uuid;
 
 // Admin: Get dashboard statistics
 pub async fn get_stats(
@@ -55,11 +55,11 @@ pub async fn get_stats(
     // Get shipping, tax, and subtotal from paid orders
     let earnings = sqlx::query!(
         r#"
-        SELECT 
+        SELECT
             COALESCE(SUM(shipping_cost), 0) as total_shipping,
             COALESCE(SUM(tax), 0) as total_tax,
             COALESCE(SUM(subtotal), 0) as total_subtotal
-        FROM orders 
+        FROM orders
         WHERE payment_status = 'paid'
         "#
     )
@@ -79,13 +79,13 @@ pub async fn get_stats(
     // Payment method breakdown
     let payment_breakdown = sqlx::query!(
         r#"
-        SELECT 
+        SELECT
             payment_method,
             COUNT(*) as "count!",
             COALESCE(SUM(shipping_cost), 0) as shipping,
             COALESCE(SUM(tax), 0) as tax,
             COALESCE(SUM(subtotal), 0) as subtotal
-        FROM orders 
+        FROM orders
         WHERE payment_status = 'paid'
         GROUP BY payment_method
         "#
@@ -105,11 +105,12 @@ pub async fn get_stats(
         })
     }).collect();
 
-    let pending_apps = sqlx::query!("SELECT COUNT(*) as count FROM vendor_applications WHERE status = 'pending'")
-        .fetch_one(state.get_db_pool())
-        .await?
-        .count
-        .unwrap_or(0);
+    let pending_apps =
+        sqlx::query!("SELECT COUNT(*) as count FROM vendor_applications WHERE status = 'pending'")
+            .fetch_one(state.get_db_pool())
+            .await?
+            .count
+            .unwrap_or(0);
 
     Ok(Json(serde_json::json!({
         "total_users": total_users,
@@ -126,6 +127,40 @@ pub async fn get_stats(
     })))
 }
 
+// Admin: Get all vendors (for filter dropdowns)
+pub async fn get_vendors(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    if !auth_user.role.can_access_admin() {
+        return Err(AppError::forbidden("Admin access required"));
+    }
+
+    let vendors = sqlx::query!(
+        r#"
+        SELECT u.id, COALESCE(vp.store_name, u.first_name || ' ' || u.last_name) as name
+        FROM users u
+        LEFT JOIN vendor_profiles vp ON u.id = vp.user_id
+        WHERE u.role = 'vendor'
+        ORDER BY name ASC
+        "#
+    )
+    .fetch_all(state.get_db_pool())
+    .await?;
+
+    let vendor_list: Vec<serde_json::Value> = vendors
+        .into_iter()
+        .map(|v| {
+            serde_json::json!({
+                "id": v.id,
+                "name": v.name.unwrap_or_else(|| "Unknown Vendor".to_string()),
+            })
+        })
+        .collect();
+
+    Ok(Json(vendor_list))
+}
+
 // Admin: Get all vendor applications
 pub async fn get_vendor_applications(
     State(state): State<AppState>,
@@ -137,7 +172,7 @@ pub async fn get_vendor_applications(
 
     let apps = sqlx::query!(
         r#"
-        SELECT 
+        SELECT
             va.id, va.user_id, va.store_name, va.store_description,
             va.business_address, va.tax_id, va.phone_number, va.bank_details,
             va.status, va.admin_notes, va.reviewed_by, va.reviewed_at, va.created_at,
@@ -150,24 +185,27 @@ pub async fn get_vendor_applications(
     .fetch_all(state.get_db_pool())
     .await?;
 
-    let applications = apps.into_iter().map(|app| {
-        serde_json::json!({
-            "id": app.id,
-            "user_id": app.user_id,
-            "user_email": app.user_email,
-            "store_name": app.store_name,
-            "store_description": app.store_description,
-            "business_address": app.business_address,
-            "tax_id": app.tax_id,
-            "phone_number": app.phone_number,
-            "bank_details": app.bank_details,
-            "status": app.status,
-            "admin_notes": app.admin_notes,
-            "reviewed_by": app.reviewed_by,
-            "reviewed_at": app.reviewed_at,
-            "created_at": app.created_at,
+    let applications = apps
+        .into_iter()
+        .map(|app| {
+            serde_json::json!({
+                "id": app.id,
+                "user_id": app.user_id,
+                "user_email": app.user_email,
+                "store_name": app.store_name,
+                "store_description": app.store_description,
+                "business_address": app.business_address,
+                "tax_id": app.tax_id,
+                "phone_number": app.phone_number,
+                "bank_details": app.bank_details,
+                "status": app.status,
+                "admin_notes": app.admin_notes,
+                "reviewed_by": app.reviewed_by,
+                "reviewed_at": app.reviewed_at,
+                "created_at": app.created_at,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(applications))
 }
@@ -183,14 +221,17 @@ pub async fn review_application(
         return Err(AppError::forbidden("Admin access required"));
     }
 
-    let status = req.get("status").and_then(|s| s.as_str()).ok_or_else(|| AppError::bad_request("Status is required"))?;
+    let status = req
+        .get("status")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| AppError::bad_request("Status is required"))?;
 
     let application = sqlx::query!(
         r#"
-        SELECT 
-            user_id, store_name, store_description, business_address, 
+        SELECT
+            user_id, store_name, store_description, business_address,
             phone_number, tax_id, bank_details
-        FROM vendor_applications 
+        FROM vendor_applications
         WHERE id = $1
         "#,
         application_id
@@ -228,7 +269,7 @@ pub async fn review_application(
         sqlx::query!(
             r#"
             INSERT INTO vendor_profiles (
-                id, user_id, store_name, store_description, 
+                id, user_id, store_name, store_description,
                 business_address, phone_number, tax_id, bank_details,
                 is_approved, created_at, updated_at
             )
@@ -254,6 +295,35 @@ pub async fn review_application(
     })))
 }
 
+// Admin: Get inventory logs for a product
+pub async fn get_product_inventory_logs(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Path(product_id): Path<Uuid>,
+    Query(params): Query<crate::types::PaginationParams>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !auth_user.role.can_access_admin() {
+        return Err(AppError::forbidden("Admin access required"));
+    }
+
+    let page = params.page.unwrap_or(1).max(1) as i64;
+    let page_size = params.page_size.unwrap_or(20).max(1) as i64;
+    let offset = (page - 1) * page_size;
+
+    let logs =
+        ProductRepository::get_inventory_logs(state.get_db_pool(), &product_id, page_size, offset)
+            .await?;
+
+    let total = ProductRepository::count_inventory_logs(state.get_db_pool(), &product_id).await?;
+
+    Ok(Json(serde_json::json!({
+        "logs": logs,
+        "total": total,
+        "page": page,
+        "page_size": page_size
+    })))
+}
+
 // Admin: Get all users
 pub async fn get_users(
     State(state): State<AppState>,
@@ -273,17 +343,20 @@ pub async fn get_users(
     .fetch_all(state.get_db_pool())
     .await?;
 
-    let user_list = users.into_iter().map(|u| {
-        serde_json::json!({
-            "id": u.id,
-            "email": u.email,
-            "first_name": u.first_name,
-            "last_name": u.last_name,
-            "role": u.role,
-            "is_active": u.is_active,
-            "created_at": u.created_at,
+    let user_list = users
+        .into_iter()
+        .map(|u| {
+            serde_json::json!({
+                "id": u.id,
+                "email": u.email,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "role": u.role,
+                "is_active": u.is_active,
+                "created_at": u.created_at,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(user_list))
 }
@@ -299,7 +372,10 @@ pub async fn update_user_status(
         return Err(AppError::forbidden("Admin access required"));
     }
 
-    let is_active = req.get("is_active").and_then(|v| v.as_bool()).ok_or_else(|| AppError::bad_request("is_active is required"))?;
+    let is_active = req
+        .get("is_active")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| AppError::bad_request("is_active is required"))?;
 
     sqlx::query!(
         r#"
@@ -328,7 +404,7 @@ pub async fn get_all_products(
 
     let products = sqlx::query!(
         r#"
-        SELECT 
+        SELECT
             p.id, p.name, p.price, p.stock_quantity, p.is_active, p.vendor_id,
             p.created_at,
             CONCAT(u.first_name, ' ', u.last_name) as vendor_name
@@ -340,18 +416,21 @@ pub async fn get_all_products(
     .fetch_all(state.get_db_pool())
     .await?;
 
-    let product_list = products.into_iter().map(|p| {
-        serde_json::json!({
-            "id": p.id,
-            "name": p.name,
-            "price": p.price,
-            "stock_quantity": p.stock_quantity,
-            "is_active": p.is_active,
-            "vendor_id": p.vendor_id,
-            "vendor_name": p.vendor_name,
-            "created_at": p.created_at,
+    let product_list = products
+        .into_iter()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "name": p.name,
+                "price": p.price,
+                "stock_quantity": p.stock_quantity,
+                "is_active": p.is_active,
+                "vendor_id": p.vendor_id,
+                "vendor_name": p.vendor_name,
+                "created_at": p.created_at,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(product_list))
 }
@@ -367,7 +446,7 @@ pub async fn get_all_orders(
 
     let orders = sqlx::query!(
         r#"
-        SELECT 
+        SELECT
             o.id, o.order_number, o.total, o.status, o.created_at,
             o.payment_method, o.payment_status,
             u.email as customer_email,
@@ -380,19 +459,22 @@ pub async fn get_all_orders(
     .fetch_all(state.get_db_pool())
     .await?;
 
-    let order_list = orders.into_iter().map(|o| {
-        serde_json::json!({
-            "id": o.id,
-            "payment_method": o.payment_method,
-            "payment_status": o.payment_status,
-            "order_number": o.order_number,
-            "total": o.total,
-            "status": o.status,
-            "created_at": o.created_at,
-            "customer_email": o.customer_email,
-            "customer_name": o.customer_name,
+    let order_list = orders
+        .into_iter()
+        .map(|o| {
+            serde_json::json!({
+                "id": o.id,
+                "payment_method": o.payment_method,
+                "payment_status": o.payment_status,
+                "order_number": o.order_number,
+                "total": o.total,
+                "status": o.status,
+                "created_at": o.created_at,
+                "customer_email": o.customer_email,
+                "customer_name": o.customer_name,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(order_list))
 }
@@ -436,7 +518,9 @@ pub async fn mark_order_paid(
 
     tx.commit().await?;
 
-    Ok(Json(serde_json::json!({ "message": "Order marked as paid" })))
+    Ok(Json(
+        serde_json::json!({ "message": "Order marked as paid" }),
+    ))
 }
 
 // Admin: Get inventory with filters
@@ -462,7 +546,8 @@ pub async fn get_inventory(
         params.search,
         page,
         page_size,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(serde_json::json!({
         "items": inventory,
@@ -488,7 +573,8 @@ pub async fn manual_adjust_stock(
         req,
         &auth_user.user_id,
         &state.get_email_service(),
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(serde_json::json!({
         "message": "Stock adjusted successfully"
@@ -504,9 +590,8 @@ pub async fn get_low_stock_summary(
         return Err(AppError::forbidden("Admin access required"));
     }
 
-    let low_stock_products = crate::services::AlertService::get_low_stock_summary(
-        state.get_db_pool(),
-    ).await?;
+    let low_stock_products =
+        crate::services::AlertService::get_low_stock_summary(state.get_db_pool()).await?;
 
     let low_stock_count = low_stock_products.len();
 
@@ -516,58 +601,63 @@ pub async fn get_low_stock_summary(
     })))
 }
 
-    // Admin: Get platform fee settings (public)
-    pub async fn get_platform_settings(
-        State(state): State<AppState>,
-    ) -> Result<Json<PlatformSettingsResponse>, AppError> {
-        let settings = sqlx::query!(
-            r#"
-            SELECT platform_fee_percent, updated_at
+// Admin: Get platform fee settings (public)
+pub async fn get_platform_settings(
+    State(state): State<AppState>,
+) -> Result<Json<PlatformSettingsResponse>, AppError> {
+    let settings = sqlx::query!(
+        r#"
+            SELECT platform_fee_percent, tax_rate, updated_at
             FROM platform_settings
             WHERE is_active = true
             ORDER BY created_at DESC
             LIMIT 1
             "#
-        )
-        .fetch_one(state.get_db_pool())
-        .await?;
-    
-        Ok(Json(PlatformSettingsResponse {
-            platform_fee_percent: settings.platform_fee_percent,
-            updated_at: settings.updated_at.unwrap_or_else(chrono::Utc::now),
-        }))
+    )
+    .fetch_one(state.get_db_pool())
+    .await?;
+
+    Ok(Json(PlatformSettingsResponse {
+        platform_fee_percent: settings.platform_fee_percent,
+        tax_rate: settings.tax_rate,
+        updated_at: settings.updated_at.unwrap_or_else(chrono::Utc::now),
+    }))
+}
+
+// Admin: Update platform fee settings
+pub async fn update_platform_settings(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Json(req): Json<UpdatePlatformSettingsRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !auth_user.role.can_access_admin() {
+        return Err(AppError::forbidden("Admin access required"));
     }
-    
-    // Admin: Update platform fee settings
-    pub async fn update_platform_settings(
-        State(state): State<AppState>,
-        Extension(auth_user): Extension<AuthUser>,
-        Json(req): Json<UpdatePlatformSettingsRequest>,
-    ) -> Result<Json<serde_json::Value>, AppError> {
-        if !auth_user.role.can_access_admin() {
-            return Err(AppError::forbidden("Admin access required"));
-        }
-    
-        if req.platform_fee_percent < Decimal::ZERO || req.platform_fee_percent > Decimal::new(10000, 2) {
-            return Err(AppError::bad_request("Fee must be between 0 and 100%"));
-        }
-    
-        // Deactivate old
-        sqlx::query!("UPDATE platform_settings SET is_active = false WHERE is_active = true")
-            .execute(state.get_db_pool())
-            .await?;
-    
-        // Insert new
-        sqlx::query!(
-            "INSERT INTO platform_settings (platform_fee_percent, updated_by) VALUES ($1, $2)",
-            req.platform_fee_percent,
-            auth_user.user_id
-        )
+
+    if req.platform_fee_percent < Decimal::ZERO || req.platform_fee_percent > Decimal::new(10000, 2)
+    {
+        return Err(AppError::bad_request("Fee must be between 0 and 100%"));
+    }
+    if req.tax_rate < Decimal::ZERO || req.tax_rate > Decimal::new(10000, 2) {
+        return Err(AppError::bad_request("Tax must be between 0 and 100%"));
+    }
+
+    sqlx::query!("UPDATE platform_settings SET is_active = false WHERE is_active = true")
         .execute(state.get_db_pool())
         .await?;
-    
-        Ok(Json(serde_json::json!({
-            "message": "Platform fee updated",
-            "platform_fee_percent": req.platform_fee_percent
-        })))
-    }
+
+    sqlx::query!(
+        "INSERT INTO platform_settings (platform_fee_percent, tax_rate, updated_by) VALUES ($1, $2, $3)",
+        req.platform_fee_percent,
+        req.tax_rate,
+        auth_user.user_id
+    )
+    .execute(state.get_db_pool())
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "message": "Settings updated",
+        "platform_fee_percent": req.platform_fee_percent,
+        "tax_rate": req.tax_rate
+    })))
+}
